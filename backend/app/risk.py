@@ -10,6 +10,20 @@ class RiskResult:
     signals: list[Signal]
 
 
+def _matched_evidence(pattern: re.Pattern[str], listing: ListingRequest) -> tuple[str | None, str | None]:
+    for source, value in (("title", listing.title), ("description", listing.description)):
+        match = pattern.search(value)
+        if not match:
+            continue
+        evidence = match.group(0)
+        evidence = re.sub(r"https?://\S+|www\.\S+", "[link removed]", evidence, flags=re.I)
+        evidence = re.sub(r"\b[\w.+-]+@[\w.-]+\.[A-Z]{2,}\b", "[email removed]", evidence, flags=re.I)
+        evidence = re.sub(r"(?<!\w)\+?\d[\d\s().-]{7,}\d(?!\w)", "[number removed]", evidence)
+        evidence = " ".join(evidence.split())[:140]
+        return evidence, source
+    return None, None
+
+
 RULES: list[tuple[str, re.Pattern[str], str, str, int]] = [
     (
         "payment_before_viewing",
@@ -22,7 +36,7 @@ RULES: list[tuple[str, re.Pattern[str], str, str, int]] = [
         "wire_or_irreversible_payment",
         re.compile(r"\b(?:wire transfer|western union|moneygram|gift cards?|crypto(?:currency)?|bitcoin|e-?transfer only)\b", re.I),
         "Unusual or hard-to-reverse payment method",
-        "The description mentions a payment method that can be difficult to reverse. Confirm the recipient and use a traceable, agreed payment process.",
+        "The listing mentions a payment method that can be difficult to reverse. Verify the unit and recipient, and agree on a traceable payment process before paying.",
         24,
     ),
     (
@@ -57,7 +71,15 @@ def analyze_text(listing: ListingRequest) -> RiskResult:
         if pattern.search(text):
             points += weight
             severity = "high" if weight >= 22 else "medium"
-            signals.append(Signal(code=code, title=title, detail=detail, severity=severity))
+            evidence, evidence_source = _matched_evidence(pattern, listing)
+            signals.append(Signal(
+                code=code,
+                title=title,
+                detail=detail,
+                severity=severity,
+                evidence=evidence,
+                evidence_source=evidence_source,
+            ))
 
     if len(listing.description.strip()) < 35:
         points += 4
@@ -93,4 +115,3 @@ def summarize(score: int) -> tuple[str, str]:
     if score >= 30:
         return "Review signals", "Some details deserve a closer check before you reply or pay."
     return "Lower signal", "Few automated warning signs were found in the available listing details."
-

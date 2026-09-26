@@ -8,7 +8,7 @@ Im just checking that i can push
 - Checks listing language for payment-before-viewing requests, hard-to-reverse payment methods, requests for verification codes, unavailable landlords, and pressure tactics.
 - Optionally uses a local OpenCLIP model for image and text embeddings. It can flag a weak text/photo match and compare a photo with recent photos previously analyzed by the same service.
 - Optionally stores minimal listing features in PostgreSQL/PostGIS. With enough nearby history, scikit-learn DBSCAN checks for price-and-location density outliers.
-- Shows the score and its individual signals in the extension popup. The score is a triage aid, not a market valuation or proof of fraud.
+- Shows the score and plain-language signal cards in the extension popup. Text-based flags include the short phrase that triggered the rule and where it appeared; each card explains why it matters. The score is a triage aid, not a probability, market valuation, or proof of fraud.
 
 The project uses OpenCLIP with LAION pretrained weights. It does not send listing content to OpenAI or another model API. CLIP weights are downloaded by the vision-enabled service on its first model use.
 

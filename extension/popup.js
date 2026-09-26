@@ -47,34 +47,74 @@ async function analyze() {
 
 function render(result) {
   const score = Math.max(0, Math.min(100, Math.round(result.risk_score ?? 0)));
-  $("score").textContent = score;
-  const ring = $("score-ring");
-  ring.className = `score-ring ${score >= 60 ? "high" : score >= 30 ? "medium" : ""}`;
+  const level = score >= 60 ? "high" : score >= 30 ? "medium" : "low";
+  const card = $("score-card");
+  card.dataset.level = level;
+  $("score").textContent = String(score);
+  $("score-fill").style.width = `${score}%`;
+  $("score-track").setAttribute("aria-valuenow", String(score));
+  $("verdict-icon").textContent = level === "high" ? "!" : level === "medium" ? "?" : "✓";
   $("level").textContent = result.risk_level || "Review signals";
   $("summary").textContent = result.summary || "Use these signals as a starting point for your own checks.";
   const signals = $("signals");
   signals.replaceChildren();
   const items = result.signals || [];
-  $("signal-count").textContent = `${items.length} signal${items.length === 1 ? "" : "s"}`;
+  $("signal-count").textContent = `${items.length} ${items.length === 1 ? "reason" : "reasons"}`;
   if (!items.length) {
     const li = document.createElement("li");
-    li.className = "empty";
-    li.textContent = "No strong automated warning signs were found in the available listing details.";
+    li.className = "empty-state";
+    const icon = document.createElement("span");
+    icon.className = "empty-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "✓";
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = "No common warning signs found";
+    const detail = document.createElement("p");
+    detail.textContent = "This check only uses the details available on the page. Verify the listing yourself before paying.";
+    copy.append(title, detail);
+    li.append(icon, copy);
     signals.append(li);
   }
   for (const item of items) {
     const li = document.createElement("li");
-    const dot = document.createElement("span");
-    dot.className = `dot ${item.severity || "medium"}`;
+    const severity = ["low", "medium", "high"].includes(item.severity) ? item.severity : "medium";
+    li.className = `signal-card severity-${severity}`;
     const copy = document.createElement("div");
-    const title = document.createElement("p");
+    const top = document.createElement("div");
+    top.className = "signal-topline";
+    const marker = document.createElement("span");
+    marker.className = "signal-marker";
+    marker.setAttribute("aria-hidden", "true");
+    marker.textContent = severity === "high" ? "!" : severity === "medium" ? "•" : "i";
+    const badge = document.createElement("span");
+    badge.className = `severity-badge ${severity}`;
+    badge.textContent = severity === "high" ? "Strong warning sign" : severity === "medium" ? "Worth a closer look" : "Helpful note";
+    top.append(marker, badge);
+
+    const title = document.createElement("h4");
     title.className = "signal-title";
     title.textContent = item.title || "Review this detail";
+    const detailLabel = document.createElement("p");
+    detailLabel.className = "reason-label";
+    detailLabel.textContent = "Why it matters";
     const detail = document.createElement("p");
     detail.className = "signal-detail";
     detail.textContent = item.detail || "This detail may deserve a closer look.";
-    copy.append(title, detail);
-    li.append(dot, copy);
+    copy.append(top, title, detailLabel, detail);
+
+    if (item.evidence) {
+      const evidence = document.createElement("blockquote");
+      evidence.className = "evidence";
+      const source = document.createElement("span");
+      source.textContent = item.evidence_source === "title" ? "Text found in the title" : "Text found in the description";
+      const quote = document.createElement("q");
+      quote.textContent = item.evidence;
+      evidence.append(source, quote);
+      copy.append(evidence);
+    }
+
+    li.append(copy);
     signals.append(li);
   }
   const baseline = result.baseline || {};
@@ -88,5 +128,5 @@ $("analyze").addEventListener("click", analyze);
 $("retry").addEventListener("click", analyze);
 $("again").addEventListener("click", analyze);
 $("settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
-currentTab().then(() => { $("page-hint").textContent = "Works on Craigslist and Facebook Marketplace listings."; })
+currentTab().then(() => { $("page-hint").textContent = "Ready to check the listing on this page."; })
   .catch((error) => { $("page-hint").textContent = error.message; $("analyze").disabled = true; $("analyze").textContent = "Open a supported listing"; });

@@ -3,45 +3,80 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Rental Scam Shield</title>
+  <title>Rental Shield</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
-      <div class="brand-icon" aria-hidden="true">✓</div>
-      <div><p class="eyebrow">VANCOUVER RENTAL</p><h1>Scam Shield</h1></div>
-      <button id="settings" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" focusable="false"><path d="M16 3.5 27 8v7.2c0 7.2-4.6 11.4-11 13.3C9.6 26.6 5 22.4 5 15.2V8l11-4.5Z"/><path d="m11.5 16 3 3 6.5-7"/></svg>
+      </div>
+      <div class="brand-copy">
+        <p class="eyebrow">VANCOUVER RENTAL CHECK</p>
+        <h1>Rental Shield</h1>
+      </div>
+      <button id="settings" class="icon-button" type="button" title="Settings" aria-label="Open settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/><path d="m19.4 13.5 1.1.8-1.1 1.9-1.3-.5a7.8 7.8 0 0 1-1.4.8l-.2 1.4h-2.2l-.3-1.4a7.8 7.8 0 0 1-1.5-.1l-.9 1.1-1.9-1.1.5-1.3a7.8 7.8 0 0 1-.8-1.4l-1.4-.2v-2.2l1.4-.3a7.8 7.8 0 0 1 .1-1.5l-1.1-.9 1.1-1.9 1.3.5a7.8 7.8 0 0 1 1.4-.8l.2-1.4h2.2l.3 1.4a7.8 7.8 0 0 1 1.5.1l.9-1.1 1.9 1.1-.5 1.3a7.8 7.8 0 0 1 .8 1.4l1.4.2v2.2l-1.4.3a7.8 7.8 0 0 1-.1 1.5Z"/></svg>
+      </button>
     </header>
 
     <section id="intro" class="intro">
-      <p>Check this listing for warning signs before you reply.</p>
-      <button id="analyze" class="primary">Analyze this listing</button>
-      <p id="page-hint" class="hint"></p>
+      <span class="platform-label"><span class="platform-dot" aria-hidden="true"></span> Craigslist and Facebook Marketplace</span>
+      <h2>Pause before you message.</h2>
+      <p>Check a rental listing for common warning signs. You stay in control of what happens next.</p>
+      <button id="analyze" class="primary" type="button">
+        <span>Check this listing</span>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11M10 5l5 5-5 5"/></svg>
+      </button>
+      <p id="page-hint" class="hint" role="status"></p>
+      <p class="privacy-note"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4.5" y="8.5" width="11" height="8" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2"/></svg> Nothing is checked until you press the button.</p>
     </section>
 
-    <section id="loading" class="loading hidden" aria-live="polite">
-      <span class="spinner"></span><span>Reviewing listing signals…</span>
+    <section id="loading" class="loading hidden" aria-live="polite" aria-busy="true">
+      <span class="spinner" aria-hidden="true"></span>
+      <div><strong>Checking the listing</strong><span>Looking for details that may need a closer look.</span></div>
     </section>
 
     <section id="error" class="error hidden" aria-live="polite">
-      <h2>Couldn’t analyze this page</h2><p id="error-copy"></p>
-      <button id="retry" class="secondary">Try again</button>
+      <div class="state-icon" aria-hidden="true">!</div>
+      <div><h2>We couldn’t check this page</h2><p id="error-copy"></p></div>
+      <button id="retry" class="secondary" type="button">Try again</button>
     </section>
 
-    <section id="result" class="hidden" aria-live="polite">
-      <div class="score-card">
-        <div id="score-ring" class="score-ring"><span id="score">—</span><small>/100</small></div>
-        <div><p class="eyebrow">RISK INDICATOR</p><h2 id="level">Review signals</h2><p id="summary" class="summary"></p></div>
+    <section id="result" class="result hidden" aria-live="polite">
+      <div id="score-card" class="verdict" data-level="low">
+        <div class="verdict-top">
+          <div class="verdict-icon" id="verdict-icon" aria-hidden="true">✓</div>
+          <div class="verdict-copy">
+            <p class="eyebrow">SCREENING RESULT</p>
+            <h2 id="level">Lower signal</h2>
+            <p id="summary" class="summary"></p>
+          </div>
+        </div>
+        <div class="score-row"><span>Signal score</span><strong><span id="score">—</span><small> / 100</small></strong></div>
+        <div id="score-track" class="score-track" role="meter" aria-label="Signal score" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="score-fill"></span></div>
+        <p class="score-note">This score is not the chance that a listing is a scam.</p>
       </div>
-      <div class="section-heading"><h3>What we noticed</h3><span id="signal-count"></span></div>
+
+      <div class="section-heading">
+        <div><h3>Reasons to review</h3><p>Here’s what the check noticed.</p></div>
+        <span id="signal-count" class="count-pill"></span>
+      </div>
       <ul id="signals" class="signals"></ul>
-      <p id="baseline" class="baseline"></p>
-      <div class="disclaimer">A screening aid, not proof of fraud. Verify the unit, landlord, and payment process yourself.</div>
-      <button id="again" class="secondary">Analyze again</button>
+      <div id="baseline-card" class="baseline-card">
+        <span class="baseline-icon" aria-hidden="true">i</span>
+        <p id="baseline"></p>
+      </div>
+      <div class="next-steps">
+        <h3>Before you pay</h3>
+        <p>See the unit, confirm who can rent it, and use a payment method you understand.</p>
+      </div>
+      <p class="disclaimer">A warning is a reason to check. It isn’t proof of fraud, and a low score doesn’t prove a listing is safe.</p>
+      <button id="again" class="secondary" type="button">Check again</button>
     </section>
 
-    <footer>Listing text and public image links are sent to your configured analysis service.</footer>
+    <footer>Listing text and public photo links go to your configured analysis service only when you check.</footer>
   </main>
   <script src="popup.js"></script>
 </body>

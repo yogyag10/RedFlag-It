@@ -7,33 +7,34 @@ chrome.storage.local.get({ apiUrl: "http://127.0.0.1:8000", apiKey: "" }, (setti
   keyField.value = settings.apiKey;
 });
 
+function setStatus(message, kind = "") {
+  status.textContent = message;
+  status.className = `status ${kind}`.trim();
+}
+
 document.getElementById("save").addEventListener("click", async () => {
-  status.textContent = "";
+  setStatus("");
   let parsed;
   try {
     parsed = new URL(urlField.value.trim());
     if (!(["http:", "https:"].includes(parsed.protocol)) || parsed.username || parsed.password) throw new Error();
   } catch (_) {
-    status.textContent = "Enter a valid http or https service URL.";
-    status.style.color = "#ad3c31";
+    setStatus("Enter a valid http or https service address.", "error");
     return;
   }
   const localHost = ["127.0.0.1", "localhost"].includes(parsed.hostname);
   if (!localHost && parsed.protocol !== "https:") {
-    status.textContent = "Remote services must use HTTPS. HTTP is allowed only for localhost.";
-    status.style.color = "#ad3c31";
+    setStatus("Remote services need HTTPS. HTTP is allowed only on this computer.", "error");
     return;
   }
   if (!localHost) {
     const origin = `${parsed.protocol}//${parsed.host}/*`;
     const granted = await chrome.permissions.request({ origins: [origin] });
     if (!granted) {
-      status.textContent = "Chrome needs permission to contact that server.";
-      status.style.color = "#ad3c31";
+      setStatus("Chrome needs permission to contact that service.", "error");
       return;
     }
   }
   await chrome.storage.local.set({ apiUrl: parsed.origin, apiKey: keyField.value.trim() });
-  status.textContent = "Settings saved.";
-  status.style.color = "#08764c";
+  setStatus("Settings saved.", "success");
 });

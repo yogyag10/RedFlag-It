@@ -27,6 +27,8 @@ class Signal(BaseModel):
     title: str
     detail: str
     severity: Literal["low", "medium", "high"]
+    evidence: str | None = None
+    evidence_source: Literal["title", "description"] | None = None
 
 
 class Baseline(BaseModel):
@@ -43,4 +45,3 @@ class ListingAnalysis(BaseModel):
     baseline: Baseline
     vision_status: str
     analyzed_at: datetime
-
