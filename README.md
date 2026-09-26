@@ -52,6 +52,10 @@ The extension requests access only to Craigslist, Facebook Marketplace, and the 
 - The service URL and API key are stored in Chrome local extension storage. Configure an API key before exposing any service beyond loopback.
 - No financial vendor datasets, APIs, or integrations are included.
 
+## Example dataset
+
+`datasets/synthetic_suspicious_listings.json` contains five fully fictional suspicious-listing scenarios for development and demos. It has no real Marketplace content, seller information, addresses, photos, or contact details. The listed `expected_rule_codes` correspond to text rules in the current backend; `manual_review_signals` are review prompts and are not guaranteed automated detections. The synthetic prices are not neighborhood benchmarks, and these examples are not validated training data.
+
 ## Project layout
 
 ```text

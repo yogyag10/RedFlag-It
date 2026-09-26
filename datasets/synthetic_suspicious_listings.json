@@ -1,0 +1,127 @@
+{
+  "dataset_name": "vancouver-rental-scam-shield-synthetic-suspicious-v1",
+  "created_date": "2026-09-26",
+  "purpose": "Fictional examples for exercising rental-scam warning signals.",
+  "important_note": "Every record is synthetic. None was copied from a real listing, and none describes a real person or property. Prices and locations are fictional test values, not market data. These examples are not evidence of fraud and are not a validated training dataset.",
+  "records": [
+    {
+      "id": "SYN-001",
+      "synthetic": true,
+      "label": "suspicious",
+      "label_basis": "fictional scenario designed to contain multiple warning signs",
+      "listing": {
+        "title": "Two-bedroom apartment, quick move-in",
+        "price": 1050,
+        "currency": "CAD",
+        "price_period": "month",
+        "location_text": "Vancouver area (fictional)",
+        "bedrooms": 2,
+        "bathrooms": 1,
+        "description": "Fictional test listing. Send a deposit before viewing to reserve the apartment. E-transfer only. Send deposit today because many people are interested."
+      },
+      "expected_rule_codes": [
+        "payment_before_viewing",
+        "wire_or_irreversible_payment",
+        "pressure_tactic"
+      ],
+      "manual_review_signals": [
+        "Verify the unit and rental authority before paying; the low fictional price alone does not prove fraud."
+      ]
+    },
+    {
+      "id": "SYN-002",
+      "synthetic": true,
+      "label": "suspicious",
+      "label_basis": "fictional scenario designed to contain multiple warning signs",
+      "listing": {
+        "title": "Furnished one-bedroom, available now",
+        "price": 900,
+        "currency": "CAD",
+        "price_period": "month",
+        "location_text": "Metro Vancouver (fictional)",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "description": "Fictional test listing. I am overseas and cannot meet for a viewing. The keys will be shipped after you send a wire transfer deposit before viewing."
+      },
+      "expected_rule_codes": [
+        "landlord_unavailable",
+        "wire_or_irreversible_payment",
+        "payment_before_viewing"
+      ],
+      "manual_review_signals": [
+        "Request an in-person or live video viewing and independently confirm who is authorized to rent the unit."
+      ]
+    },
+    {
+      "id": "SYN-003",
+      "synthetic": true,
+      "label": "suspicious",
+      "label_basis": "fictional scenario designed to contain an account-takeover warning sign",
+      "listing": {
+        "title": "Studio viewing appointment",
+        "price": 1400,
+        "currency": "CAD",
+        "price_period": "month",
+        "location_text": "Vancouver area (fictional)",
+        "bedrooms": 0,
+        "bathrooms": 1,
+        "description": "Fictional test listing. Before I schedule the showing, tell me the six-digit Facebook verification code sent to your phone. Act now so I can hold your place."
+      },
+      "expected_rule_codes": [
+        "verification_code",
+        "pressure_tactic"
+      ],
+      "manual_review_signals": [
+        "Never share login or verification codes with a prospective landlord."
+      ]
+    },
+    {
+      "id": "SYN-004",
+      "synthetic": true,
+      "label": "suspicious",
+      "label_basis": "fictional scenario designed to exercise image-reuse and payment checks",
+      "listing": {
+        "title": "Bright two-bedroom suite",
+        "price": 1150,
+        "currency": "CAD",
+        "price_period": "month",
+        "location_text": "Burnaby area (fictional)",
+        "bedrooms": 2,
+        "bathrooms": 1,
+        "description": "Fictional test listing. I cannot meet because I am out of the country. Send the deposit before viewing and I will arrange delivery of the keys."
+      },
+      "synthetic_image_fixture_group": "SYNTHETIC-ROOM-PHOTO-SET-A",
+      "expected_rule_codes": [
+        "landlord_unavailable",
+        "payment_before_viewing"
+      ],
+      "manual_review_signals": [
+        "Compare the synthetic photo fixture with other test listings to exercise duplicate-image detection.",
+        "A repeated photo is a reason to investigate, not proof by itself that an ad is fraudulent."
+      ]
+    },
+    {
+      "id": "SYN-005",
+      "synthetic": true,
+      "label": "suspicious",
+      "label_basis": "fictional scenario designed to exercise urgency and detail-consistency review",
+      "listing": {
+        "title": "Vancouver one-bedroom apartment",
+        "price": 1250,
+        "currency": "CAD",
+        "price_period": "month",
+        "location_text": "Vancouver / Surrey details conflict (fictional)",
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "description": "Fictional test listing. The title says Vancouver, but the description says the unit is in Surrey. First come first served; send deposit today to hold it."
+      },
+      "expected_rule_codes": [
+        "pressure_tactic"
+      ],
+      "manual_review_signals": [
+        "Resolve the city mismatch by verifying the property location independently.",
+        "The current text rules do not automatically flag this location contradiction."
+      ]
+    }
+  ]
+}
