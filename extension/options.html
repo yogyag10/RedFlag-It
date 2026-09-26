@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scam Shield Settings</title><link rel="stylesheet" href="options.css"></head>
+<body>
+  <main>
+    <header><div class="icon">✓</div><div><p class="eyebrow">VANCOUVER RENTAL</p><h1>Scam Shield settings</h1></div></header>
+    <section class="card">
+      <h2>Analysis service</h2>
+      <p>By default, analysis runs against the service on your own computer. You can point it to a trusted server you control.</p>
+      <label for="api-url">Service URL</label>
+      <input id="api-url" type="url" placeholder="http://127.0.0.1:8000" autocomplete="url">
+      <label for="api-key">API key <span>(optional)</span></label>
+      <input id="api-key" type="password" placeholder="Only needed if your service requires it" autocomplete="new-password">
+      <button id="save">Save settings</button><div id="status" role="status"></div>
+    </section>
+    <section class="card privacy">
+      <h2>What gets sent</h2>
+      <p>When you analyze a page, the extension sends its visible title, description, asking price, page URL, and up to eight public image URLs to the service above. The service may download those images for analysis. Your service URL and API key are saved locally in this Chrome profile. Listings are only retained if the service is configured with a database.</p>
+      <p>Use a service you trust. The extension does not ask for payment, account, or banking information and never interacts with financial vendor data.</p>
+    </section>
+  </main><script src="options.js"></script>
+</body>
+</html>

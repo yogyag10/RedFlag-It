@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Rental Scam Shield</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand-icon" aria-hidden="true">✓</div>
+      <div><p class="eyebrow">VANCOUVER RENTAL</p><h1>Scam Shield</h1></div>
+      <button id="settings" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
+    </header>
+
+    <section id="intro" class="intro">
+      <p>Check this listing for warning signs before you reply.</p>
+      <button id="analyze" class="primary">Analyze this listing</button>
+      <p id="page-hint" class="hint"></p>
+    </section>
+
+    <section id="loading" class="loading hidden" aria-live="polite">
+      <span class="spinner"></span><span>Reviewing listing signals…</span>
+    </section>
+
+    <section id="error" class="error hidden" aria-live="polite">
+      <h2>Couldn’t analyze this page</h2><p id="error-copy"></p>
+      <button id="retry" class="secondary">Try again</button>
+    </section>
+
+    <section id="result" class="hidden" aria-live="polite">
+      <div class="score-card">
+        <div id="score-ring" class="score-ring"><span id="score">—</span><small>/100</small></div>
+        <div><p class="eyebrow">RISK INDICATOR</p><h2 id="level">Review signals</h2><p id="summary" class="summary"></p></div>
+      </div>
+      <div class="section-heading"><h3>What we noticed</h3><span id="signal-count"></span></div>
+      <ul id="signals" class="signals"></ul>
+      <p id="baseline" class="baseline"></p>
+      <div class="disclaimer">A screening aid, not proof of fraud. Verify the unit, landlord, and payment process yourself.</div>
+      <button id="again" class="secondary">Analyze again</button>
+    </section>
+
+    <footer>Listing text and public image links are sent to your configured analysis service.</footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
