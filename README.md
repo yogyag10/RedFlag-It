@@ -8,7 +8,7 @@ A Manifest V3 Chrome extension and local FastAPI service for screening rental li
 - Checks listing language for payment-before-viewing requests, hard-to-reverse payment methods, requests for verification codes, unavailable landlords, and pressure tactics. When a public profile rating and at least five reviews are visible, it also flags ratings of 2.5/5 or lower for manual review.
 - Optionally uses a local OpenCLIP model for image and text matching, photo reuse checks, and a likely-visible furniture estimate. Furniture matching is a semantic photo estimate, not object detection or proof that an item is included.
 - Optionally stores minimal listing features in PostgreSQL/PostGIS. With enough nearby history, scikit-learn DBSCAN checks for price-and-location density outliers.
-- Shows the score and color-coded warning factors in a white, high-contrast design. A zero score starts with only **See details**; opening it reveals the six factor results.
+- Shows a traffic light for each checked listing: green (no red flags), yellow (one red flag: check before paying) or red (two or more: high risk), from the fraud model's `risk_light`. **See details** lists only the red flags, the checks the listing failed, with the rule-based score as a secondary line. A low price is listed only alongside another red flag.
 - Keeps up to five recent checks in Chrome storage on this device. History contains the listing title, results, and short evidence excerpts; it omits the structured address field, listing URL, photo links, and full description. The score is a triage aid, not a probability, market valuation, or proof of fraud.
 
 Risk bands are 0–29 (**LOW RISK**), 30–59 (**BE CAREFUL**), and 60–100 (**SCAM POSSIBLE**). The percentage is a rule-based screening score, not a calibrated chance of fraud.
@@ -44,31 +44,55 @@ The extension requests access only to Craigslist, Facebook Marketplace, Furnishe
 
 ## API
 
-`POST /api/quick-scores` accepts up to 20 `{id, title, description, photo_available}` card summaries and returns lightweight text-warning scores without adding points for fields that search cards do not show. These quick scores do not save listings or download photos. The full `/api/analyze` check accepts `title`, `description`, `bedrooms`, `bathrooms`, `address`, `price`, `currency`, `price_period`, `location_text`, `latitude`, `longitude`, `image_urls`, and `source_url`, plus optional `rooms`, `profile_facts`, `listing_age`, and `availability_text`. Its JSON response includes `fake`, `votes` (`fake`/`real` counts), `review_check_available`, `consensus_rules`, and six `trees` strings alongside the existing score and evidence fields. It also reports `photo_urls_received` and `photos_processed` to distinguish links read by the extension from images fetched by the service. Each tree string contains one vote, a factor code, and that factor's result. Five factors check listing text; the sixth checks only a visible public profile rating summary when at least five reviews are shown. It does not read each written review or match reviews to the seller's rental listings. A rating of 2.5/5 or lower triggers a warning. These are transparent rule checks, not trained decision-tree models; a `real` vote means only that a warning rule did not match or the review evidence was unavailable. `fake` is true when more warning votes than non-warning votes are returned. Neither value verifies whether a listing is genuine. Scores are points out of 100, not percentages or scam probabilities. Explicit room options receive separate scores and rule votes. Photo furnishing estimates use local CLIP semantic comparisons when the model and public photos are available; otherwise the response explains that the photo check is unavailable. Image fetches are limited to Craigslist, Facebook, and Furnished Finder media hosts, validate each of up to three redirects, reject private IP addresses and non-image content, and cap image size at 8 MiB. Unavailable numeric or address values are `null`; text values default to empty strings and `image_urls` to an empty array. The first local model load may take longer than later checks.
+`POST /api/quick-scores` accepts up to 20 `{id, title, description, photo_available}` card summaries and returns lightweight text-warning scores without adding points for fields that search cards do not show. These quick scores do not save listings or download photos. The full `/api/analyze` check accepts `title`, `description`, `bedrooms`, `bathrooms`, `address`, `price`, `currency`, `price_period`, `location_text`, `latitude`, `longitude`, `image_urls`, and `source_url`, plus optional `rooms`, `profile_facts`, `listing_age`, and `availability_text`. Its JSON response includes `fake`, `votes` (`fake`/`real`/`unknown` counts), `risk_light`, `review_check_available`, `consensus_rules`, and `trees` alongside the existing score and evidence fields. `risk_light` is a traffic-light summary: `color` is `green` (no warning signs), `yellow` (one) or `red` (two or more), with the `warnings` count and a display `label`. A low price counts as a warning only alongside another warning sign, so a cheap listing with no other warning stays green; `red` always matches `fake: true`. It also reports `photo_urls_received` and `photos_processed` to distinguish links read by the extension from images fetched by the service. `fake`, `votes`, `consensus_rules`, and `trees` come from the trained fraud model (see **Fraud model** below): each of its six behaviour trees contributes one `"vote | model_<behaviour> | rule"` string, `fake` is the model's consensus (at least two trees voting fake), and `consensus_rules` lists the rules of the trees that voted fake (empty when the consensus is not fake). If the model file is missing or cannot load, these fields fall back to six rule checks (five text rules and a public-review check, where a rating of 2.5/5 or lower from at least five reviews triggers a warning). Neither value verifies whether a listing is genuine. Scores are points out of 100, not percentages or scam probabilities. Explicit room options receive separate scores and model votes. Photo furnishing estimates use local CLIP semantic comparisons when the model and public photos are available; otherwise the response explains that the photo check is unavailable. Image fetches are limited to Craigslist, Facebook, and Furnished Finder media hosts, validate each of up to three redirects, reject private IP addresses and non-image content, and cap image size at 8 MiB. Unavailable numeric or address values are `null`; text values default to empty strings and `image_urls` to an empty array. The first local model load may take longer than later checks.
 
 ```json
 {
   "fake": true,
-  "votes": { "fake": 4, "real": 2 },
+  "votes": { "fake": 2, "real": 4, "unknown": 0 },
+  "risk_light": { "color": "red", "warnings": 2, "label": "2+ warning signs: high risk" },
   "review_check_available": false,
   "consensus_rules": [
-    "Payment requested before a viewing",
-    "Unusual or hard-to-reverse payment method",
-    "Request for an account verification code",
-    "Urgent pressure in the listing text"
+    "personal info request warning sign detected",
+    "price <= 1862.5 (this listing: 1700)"
   ],
   "trees": [
-    "fake | payment_before_viewing | Payment requested before a viewing",
-    "fake | wire_or_irreversible_payment | Unusual or hard-to-reverse payment method",
-    "real | landlord_unavailable | Landlord may not be available to show the unit rule not detected",
-    "fake | verification_code | Request for an account verification code",
-    "fake | pressure_tactic | Urgent pressure in the listing text",
-    "real | review_checker | No public review summary was visible; rating check unavailable"
+    "real | model_deposit_demand | no deposit demand warning sign",
+    "fake | model_personal_info_request | personal info request warning sign detected",
+    "real | model_etransfer_request | no etransfer request warning sign",
+    "real | model_high_demand_claim | no high demand claim warning sign",
+    "real | model_foreign_payment | no foreign payment warning sign",
+    "fake | model_price | price <= 1862.5 (this listing: 1700)"
   ]
 }
 ```
 
-`GET /health` reports service, database configuration, and vision initialization status. `RENTSHIELD_API_KEY` protects analysis requests with `Authorization: Bearer <key>`; local health remains open.
+`GET /health` reports service, database configuration, vision initialization, and fraud model status (`ready`, `missing`, or `unavailable`). `RENTSHIELD_API_KEY` protects analysis requests with `Authorization: Bearer <key>`; local health remains open.
+
+## Fraud model
+
+`backend/ml/fraud_bagging_model.py` is a behaviour-focused version of the bagged decision-stump model from the HelloHacks `Bagging.ipynb` notebook. It has six one-question decision trees, and each tree looks at one listing behaviour and is trained on its own bootstrap sample of 80% of the listings (`backend/ml/behaviour_ensemble.py`):
+
+| Tree code | Behaviour |
+|---|---|
+| `model_deposit_demand` | asked to send a deposit or payment to reserve the unit |
+| `model_personal_info_request` | asked for ID, SIN, banking details or a verification code |
+| `model_etransfer_request` | asked to pay by e-transfer or wire |
+| `model_high_demand_claim` | "many people interested", "won't last" pressure |
+| `model_foreign_payment` | money sent to a person or account outside Canada |
+| `model_price` | rent lower than similar listings |
+
+The five behaviour signals come from the rule-based spaCy detectors in `backend/housing_fraud_nlp`. A listing is called fake when **at least two trees** vote fake: a scam usually shows only one to three of these behaviours, so a majority vote would miss most scams, while two agreeing trees kept false alarms at zero in cross-validation.
+
+The trained model is `backend/ml/fraud_bagging_model.joblib`, saved with scikit-learn 1.9. It is trained on `backend/ml/data2.json`: 500 labelled listings (400 real, 100 fake). These are the 25 hand-labelled listings in `backend/ml/data.json` (20 real Facebook Marketplace listings and 5 written scam examples) plus 475 generated by `backend/ml/generate_data2.py`. Generated real and fake listings share titles, neighbourhoods, features, writing style and overlapping prices; fakes add scam behaviour from the RCMP BC guidance, and some real listings mention deposits and e-transfer in the normal way. Regenerate the data or retrain, then restart Uvicorn:
+
+```sh
+cd backend
+python -m ml.generate_data2      # rewrite ml/data2.json
+python -m ml.fraud_bagging_model # retrain and save the model
+```
+
+Training prints five-fold cross-validated metrics. Current results: balanced accuracy 0.855, fake precision 1.00, fake recall 0.71 (the earlier version, where five randomly-featured trees all chose the deposit signal, had 0.78, 1.00 and 0.56). Trained on the generated listings only and tested on the 25 hand-labelled ones, it catches 5 of 5 written scams and flags none of the 20 real listings. Scams that show only one behaviour are usually not called fake by the model; the rule checks and score still report them.
 
 ## Data and privacy
 
@@ -78,6 +102,7 @@ The extension requests access only to Craigslist, Facebook Marketplace, Furnishe
 - With the database enabled, it retains timestamps, asking price/currency/period, optional coordinates, image SHA-256 hashes, perceptual hashes, and CLIP embeddings. It also stores a one-way SHA-256 fingerprint of a source URL to avoid counting repeat checks as separate listings; it does not store the raw URL, listing text, contact details, or image files. The database is empty on first run and is private to the service owner.
 - The service URL and API key are stored in Chrome local extension storage. Configure an API key before exposing any service beyond loopback.
 - No financial vendor datasets, APIs, or integrations are included.
+- `backend/ml/data.json` and `data2.json` (model training data) contain the text of 20 public Facebook Marketplace rental listings, with one advertiser's name and phone number redacted, plus written and generated examples.
 
 ## Example dataset
 
@@ -86,8 +111,10 @@ The extension requests access only to Craigslist, Facebook Marketplace, Furnishe
 ## Project layout
 
 ```text
-extension/        Manifest V3 extension and popup
-backend/app/      FastAPI, rule checks, optional CLIP, PostGIS and DBSCAN
+extension/                 Manifest V3 extension and popup
+backend/app/               FastAPI, rule checks, optional CLIP, PostGIS and DBSCAN
+backend/ml/                Trained bagging fraud model, its training code and data
+backend/housing_fraud_nlp/ spaCy warning-sign detectors used as model features
 ```
 
 ## Limits

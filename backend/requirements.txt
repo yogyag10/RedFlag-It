@@ -3,6 +3,12 @@ uvicorn[standard]>=0.30,<1
 httpx>=0.27,<1
 pydantic>=2.8,<3
 numpy>=2.0,<3
-scikit-learn>=1.5,<2
+# ml/fraud_bagging_model.joblib is saved with scikit-learn 1.9; retrain after changing this.
+scikit-learn>=1.9,<1.10
 Pillow>=10.4,<13
 psycopg[binary]>=3.2,<4
+# Trained fraud model (ml/) and its text warning-sign features (housing_fraud_nlp/)
+pandas>=2,<4
+joblib>=1.3
+spacy>=3.8,<4
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl

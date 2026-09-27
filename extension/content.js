@@ -458,6 +458,77 @@
     return `<svg class="${className}" viewBox="0 0 128 128" role="img" aria-label="RedFlag shield"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7dd3fc"/><stop offset=".48" stop-color="#3b82f6"/><stop offset="1" stop-color="#1e40af"/></linearGradient></defs><path d="M64 7 111 25v33c0 28-18 49-47 62C35 107 17 86 17 58V25L64 7Z" fill="url(#${id})" stroke="#fff" stroke-opacity=".8" stroke-width="3"/><text x="64" y="76" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="39" font-weight="800" letter-spacing="-3" text-anchor="middle">RF</text></svg>`;
   }
 
+  // Traffic light shared by the launcher, the panel and the history list.
+  const LIGHTS = {
+    green: { status: "low", dot: "🟢", headline: "No red flags", label: "No warning signs found" },
+    yellow: { status: "careful", dot: "🟡", headline: "Check first", label: "1 warning sign: check before paying" },
+    red: { status: "possible", dot: "🔴", headline: "High risk", label: "2+ warning signs: high risk" },
+  };
+
+  const FLAG_NAMES = {
+    model_deposit_demand: ["💵", "Deposit demand"],
+    model_personal_info_request: ["🔐", "Personal info request"],
+    model_etransfer_request: ["💳", "E-transfer request"],
+    model_high_demand_claim: ["⏱️", "High-demand pressure"],
+    model_foreign_payment: ["🌍", "Payment sent abroad"],
+    model_price: ["🏷️", "Low price"],
+    payment_before_viewing: ["💵", "Pay before viewing"],
+    wire_or_irreversible_payment: ["💳", "Hard-to-reverse payment"],
+    landlord_unavailable: ["👤", "Renter hard to reach"],
+    verification_code: ["🔐", "Account-code request"],
+    pressure_tactic: ["⏱️", "Urgent pressure"],
+    review_checker: ["⭐", "Low public seller rating"],
+  };
+
+  function flagName(code) {
+    const modelTree = /^model_tree_(\d+)$/.exec(code || "")?.[1];
+    return FLAG_NAMES[code] || (modelTree ? ["🌳", `Model tree ${modelTree}`] : ["🚩", code || "Warning sign"]);
+  }
+
+  function parseTrees(analysis) {
+    return (Array.isArray(analysis?.trees) ? analysis.trees : []).map((entry) => {
+      const [voteText = "", code = "", ...ruleParts] = String(entry).split("|").map((part) => part.trim());
+      return { vote: voteText.toLowerCase(), code, rule: ruleParts.join(" | ") };
+    });
+  }
+
+  // Only the checks the listing failed. A low price is a red flag only
+  // alongside another one, matching the backend's risk_light.
+  function redFlags(analysis) {
+    const failed = parseTrees(analysis).filter((row) => row.vote === "fake");
+    return failed.some((row) => row.code !== "model_price") ? failed : [];
+  }
+
+  function lightOf(analysis) {
+    const sent = analysis?.risk_light?.color;
+    const count = redFlags(analysis).length;
+    const color = LIGHTS[sent] ? sent : count === 0 ? "green" : count === 1 ? "yellow" : "red";
+    return { color, ...LIGHTS[color], label: analysis?.risk_light?.label || LIGHTS[color].label };
+  }
+
+  function flagCountText(count) {
+    return count === 0 ? "No red flags" : count === 1 ? "1 red flag" : `${count} red flags`;
+  }
+
+  function makeSemaphore(color) {
+    const light = document.createElement("span");
+    light.className = "semaphore";
+    light.dataset.light = color;
+    light.setAttribute("role", "img");
+    light.setAttribute("aria-label", `Traffic light: ${color}`);
+    ["red", "yellow", "green"].forEach((lamp) => {
+      const bulb = document.createElement("i");
+      bulb.className = `lamp-${lamp}`;
+      light.append(bulb);
+    });
+    return light;
+  }
+
+  function flagNote(row, signals) {
+    const signal = signals.get(row.code === "review_checker" ? "low_public_review_rating" : row.code);
+    return [...new Set([row.rule, signal?.detail, signal?.evidence ? `Listing text: “${signal.evidence}”` : ""].filter(Boolean))].join(". ");
+  }
+
   function renderRecentHistory(shadow) {
     const host = shadow?.querySelector(".history-list");
     if (!host) return;
@@ -477,30 +548,23 @@
         host.append(empty);
         return;
       }
-      const labels = {
-        payment_before_viewing: "Money before viewing",
-        wire_or_irreversible_payment: "Hard-to-reverse payment",
-        landlord_unavailable: "Renter hard to reach",
-        verification_code: "Account-code request",
-        pressure_tactic: "Urgent pressure",
-        review_checker: "Public seller reviews",
-      };
       checks.forEach((check) => {
         const analysis = check.overall || check.analysis || {};
-        const score = Math.max(0, Math.min(100, Math.round(Number(analysis.risk_score) || 0)));
-        const status = score >= 60 ? "possible" : score >= 30 ? "careful" : "low";
-        const statusLabel = status === "possible" ? "Scam Possible" : status === "careful" ? "Be Careful" : "Low Risk";
+        const light = lightOf(analysis);
+        const flags = redFlags(analysis);
         const entry = document.createElement("details");
         entry.className = "history-entry";
         const summary = document.createElement("summary");
         const title = document.createElement("span");
         title.className = "history-title";
         title.textContent = clean(check.title || check.listing?.title || "Rental listing");
-        const scoreNode = document.createElement("span");
-        scoreNode.className = "history-score";
-        scoreNode.dataset.status = status;
-        scoreNode.textContent = `${score}/100 · ${statusLabel}`;
-        summary.append(title, scoreNode);
+        const status = document.createElement("span");
+        status.className = "history-score";
+        status.dataset.status = light.status;
+        status.textContent = flags.length
+          ? `${light.dot} ${light.headline} · ${flagCountText(flags.length)}`
+          : `${light.dot} ${light.headline}`;
+        summary.append(title, status);
         entry.append(summary);
         const date = document.createElement("time");
         date.className = "history-date";
@@ -512,39 +576,32 @@
           date.textContent = "Earlier check";
         }
         entry.append(date);
-        const treeList = document.createElement("ul");
-        treeList.className = "history-factors";
-        const signals = new Map((analysis.signals || []).map((signal) => [signal.code, signal]));
-        (Array.isArray(analysis.trees) ? analysis.trees : []).forEach((tree) => {
-          const [voteText = "", code = "", ...ruleParts] = String(tree).split("|").map((part) => part.trim());
-          const reviewUnavailable = code === "review_checker" && !analysis.review_check_available;
-          const result = reviewUnavailable || voteText.toLowerCase() === "unknown"
-            ? "unknown"
-            : voteText.toLowerCase() === "fake" ? "flag" : "clear";
-          const row = document.createElement("li");
-          row.dataset.result = result;
-          const icon = document.createElement("span");
-          icon.setAttribute("aria-hidden", "true");
-          icon.textContent = result === "flag" ? "⚠️" : result === "unknown" ? "ⓘ" : "✓";
-          const copy = document.createElement("span");
-          const name = document.createElement("strong");
-          name.textContent = labels[code] || code || "Safety check";
-          const note = document.createElement("small");
-          const signalCode = code === "review_checker" ? "low_public_review_rating" : code;
-          const signal = signals.get(signalCode);
-          note.textContent = [ruleParts.join(" | "), signal?.detail, signal?.evidence ? `Listing text: “${signal.evidence}”` : ""]
-            .filter(Boolean).join(". ")
-            || (result === "unknown" ? "Not enough public information" : result === "flag" ? "Warning found" : "No warning found");
-          copy.append(name, note);
-          row.append(icon, copy);
-          treeList.append(row);
-        });
-        if (treeList.childElementCount) entry.append(treeList);
-        else {
-          const unavailable = document.createElement("p");
-          unavailable.className = "history-empty";
-          unavailable.textContent = "Detailed checks are unavailable for this saved result.";
-          entry.append(unavailable);
+        if (flags.length) {
+          const signals = new Map((analysis.signals || []).map((signal) => [signal.code, signal]));
+          const flagList = document.createElement("ul");
+          flagList.className = "history-factors";
+          flags.forEach((row) => {
+            const [icon, name] = flagName(row.code);
+            const item = document.createElement("li");
+            item.dataset.result = "flag";
+            const glyph = document.createElement("span");
+            glyph.setAttribute("aria-hidden", "true");
+            glyph.textContent = icon;
+            const copy = document.createElement("span");
+            const heading = document.createElement("strong");
+            heading.textContent = name;
+            const note = document.createElement("small");
+            note.textContent = flagNote(row, signals) || "Warning sign found";
+            copy.append(heading, note);
+            item.append(glyph, copy);
+            flagList.append(item);
+          });
+          entry.append(flagList);
+        } else {
+          const none = document.createElement("p");
+          none.className = "history-empty";
+          none.textContent = "No red flags found.";
+          entry.append(none);
         }
         host.append(entry);
       });
@@ -628,6 +685,15 @@
         .factor[data-result="unknown"] .factor-result { color:#475569; }
         .factor-note { grid-column:2 / 4; margin:0 !important; padding:0 2px 4px; color:#334155 !important; font-size:14px !important; }
         .note { display:none; margin:13px 0 0; color:#334155; font-size:14px; }
+        .score-icon.semaphore-slot { flex:0 0 auto; width:auto; height:auto; background:none; border-radius:0; }
+        .semaphore { display:inline-flex; flex-direction:column; gap:4px; padding:6px 5px; border-radius:11px; background:#1f2937; box-shadow:inset 0 0 0 1px #0006; }
+        .semaphore i { display:block; width:13px; height:13px; border-radius:50%; background:#4b5563; }
+        .semaphore[data-light="red"] .lamp-red { background:#ef4444; box-shadow:0 0 9px #ef4444; }
+        .semaphore[data-light="yellow"] .lamp-yellow { background:#facc15; box-shadow:0 0 9px #facc15; }
+        .semaphore[data-light="green"] .lamp-green { background:#22c55e; box-shadow:0 0 9px #22c55e; }
+        .score { font-size:28px; }
+        .no-flags { margin:0; padding:10px 12px; border:1px solid #86efac; border-radius:12px; background:#f0fdf4; color:#166534 !important; font-weight:700; }
+        .score-note { margin:12px 0 0 !important; color:#475569 !important; font-size:13px !important; }
         .details .note { display:block; }
         .recent-history { margin-top:14px; padding-top:10px; border-top:2px solid #e2e8f0; }
         .recent-history > summary { min-height:40px; padding:5px 2px; color:#1e3a8a; font-size:15px; font-weight:800; cursor:pointer; }
@@ -692,50 +758,20 @@
 
   function renderDetailResult(overlay, analysis) {
     const score = Math.max(0, Math.min(100, Math.round(Number(analysis.risk_score) || 0)));
-    const status = score >= 60 ? "possible" : score >= 30 ? "careful" : "low";
-    const fakeVotes = Number(analysis.votes?.fake) || 0;
-    const realVotes = Number(analysis.votes?.real) || 0;
-    const unknownVotes = Number(analysis.votes?.unknown) || 0;
-    const noFlags = score === 0 && fakeVotes === 0 && unknownVotes === 0;
+    const light = lightOf(analysis);
+    const flags = redFlags(analysis);
     const panel = overlay.shadow.querySelector(".panel");
-    panel.classList.toggle("zero-score", score === 0);
+    panel.classList.toggle("zero-score", light.color === "green");
     const card = overlay.shadow.querySelector(".score-card");
-    card.dataset.status = status;
-    overlay.shadow.querySelector(".score").textContent = `${score} / 100`;
-    const label = status === "possible" ? "Scam Possible" : status === "careful" ? "Be Careful" : "Low Risk";
-    overlay.shadow.querySelector(".label").textContent = label;
-    overlay.shadow.querySelector(".score-icon").textContent = noFlags ? "✅" : status === "possible" ? "⚠️" : status === "careful" ? "🔎" : "⚠️";
-    overlay.shadow.querySelector(".summary").textContent = noFlags
-      ? "No warning flags found."
-      : fakeVotes ? `${fakeVotes} of 6 checks found warning signs.`
-        : unknownVotes ? "No warning flags found; seller review data is unavailable."
-          : "Review the checks below.";
-    const launcherIcon = overlay.launcher.querySelector(".status-icon");
-    launcherIcon.textContent = noFlags ? "✅" : unknownVotes && !fakeVotes ? "ⓘ" : status === "possible" ? "⚠️" : status === "careful" ? "🔎" : "⚠️";
-
-    const treeRows = (Array.isArray(analysis.trees) ? analysis.trees : []).map((entry) => {
-      const [voteText = "", code = "", ...ruleParts] = String(entry).split("|").map((part) => part.trim());
-      return { vote: voteText.toLowerCase(), code, rule: ruleParts.join(" | ") };
-    });
-    const quickFacts = overlay.shadow.querySelector(".quick-facts");
-    quickFacts.replaceChildren();
-    const addQuickFact = (icon, title, labelText, ariaLabel) => {
-      const fact = document.createElement("div");
-      fact.className = "quick-fact";
-      fact.setAttribute("role", "group");
-      fact.title = title;
-      fact.setAttribute("aria-label", ariaLabel || labelText);
-      const glyph = document.createElement("span");
-      glyph.className = "quick-icon";
-      glyph.setAttribute("aria-hidden", "true");
-      glyph.textContent = icon;
-      const labelNode = document.createElement("span");
-      labelNode.className = "quick-label";
-      labelNode.textContent = labelText;
-      fact.append(glyph, labelNode);
-      quickFacts.append(fact);
-    };
-    addQuickFact("🚩", "Check results", `Warning ${fakeVotes} · Clear ${realVotes} · Unknown ${unknownVotes}`, `${fakeVotes} warning checks, ${realVotes} clear checks, ${unknownVotes} unknown checks`);
+    card.dataset.status = light.status;
+    overlay.shadow.querySelector(".score").textContent = light.headline;
+    overlay.shadow.querySelector(".label").textContent = flags.length ? flagCountText(flags.length) : "All checks passed";
+    const lightSlot = overlay.shadow.querySelector(".score-icon");
+    lightSlot.classList.add("semaphore-slot");
+    lightSlot.replaceChildren(makeSemaphore(light.color));
+    overlay.shadow.querySelector(".summary").textContent = light.label;
+    overlay.shadow.querySelector(".quick-facts").replaceChildren();
+    overlay.launcher.querySelector(".status-icon").textContent = light.dot;
 
     const details = overlay.shadow.querySelector(".details");
     details.replaceChildren();
@@ -745,58 +781,42 @@
       parent.append(element);
       return element;
     };
-    addText("h3", "🚦 6 safety factors");
-    const factorNames = {
-      payment_before_viewing: ["💵", "Pay before viewing"],
-      wire_or_irreversible_payment: ["💳", "Hard-to-reverse payment"],
-      landlord_unavailable: ["👤", "Renter hard to reach"],
-      verification_code: ["🔐", "Account-code request"],
-      pressure_tactic: ["⏱️", "Urgent pressure"],
-      review_checker: ["⭐", "Public seller reviews"],
-    };
-    const signalByCode = new Map((analysis.signals || []).map((signal) => [signal.code, signal]));
-    const factorList = document.createElement("ul");
-    factorList.className = "factor-list";
-    treeRows.forEach((row) => {
-      const reviewUnavailable = row.code === "review_checker" && !analysis.review_check_available;
-      const result = reviewUnavailable || row.vote === "unknown" ? "unknown" : row.vote === "fake" ? "flag" : "clear";
-      const [icon, title] = factorNames[row.code] || ["ℹ️", row.code || "Rental check"];
-      const item = document.createElement("li");
-      item.className = "factor";
-      item.dataset.result = result;
-      const glyph = document.createElement("span");
-      glyph.className = "factor-icon";
-      glyph.setAttribute("aria-hidden", "true");
-      glyph.textContent = icon;
-      const name = addText("span", title, item);
-      name.className = "factor-name";
-      const outcome = addText("span", result === "flag" ? "CHECK" : result === "unknown" ? "UNKNOWN" : "CLEAR", item);
-      outcome.className = "factor-result";
-      item.prepend(glyph);
-      const signalCode = row.code === "review_checker" ? "low_public_review_rating" : row.code;
-      const signal = signalByCode.get(signalCode);
-      const noteParts = [];
-      if (row.rule) noteParts.push(row.rule);
-      if (signal?.detail) noteParts.push(signal.detail);
-      if (signal?.evidence) noteParts.push(`Listing text: “${signal.evidence}”`);
-      if (row.code === "review_checker") noteParts.push(analysis.review_check_available
-        ? "Visible seller rating checked; written review text and rental history are not checked."
-        : "Seller review data was not visible or had too few ratings to assess; written review text and rental history are not checked.");
-      const note = [...new Set(noteParts)].join(". ");
-      if (note) {
-        const noteNode = addText("p", note, item);
-        noteNode.className = "factor-note";
-      }
-      factorList.append(item);
-    });
-    details.append(factorList);
+    addText("h3", `🚩 Red flags (${flags.length})`);
+    if (flags.length) {
+      const signals = new Map((analysis.signals || []).map((signal) => [signal.code, signal]));
+      const flagList = document.createElement("ul");
+      flagList.className = "factor-list";
+      flags.forEach((row) => {
+        const [icon, title] = flagName(row.code);
+        const item = document.createElement("li");
+        item.className = "factor";
+        item.dataset.result = "flag";
+        const glyph = document.createElement("span");
+        glyph.className = "factor-icon";
+        glyph.setAttribute("aria-hidden", "true");
+        glyph.textContent = icon;
+        item.append(glyph);
+        addText("span", title, item).className = "factor-name";
+        addText("span", "RED FLAG", item).className = "factor-result";
+        const note = flagNote(row, signals);
+        if (note) addText("p", note, item).className = "factor-note";
+        flagList.append(item);
+      });
+      details.append(flagList);
+    } else {
+      addText("p", "✅ No red flags found. This listing passed all of the checks.").className = "no-flags";
+    }
+    addText("p", `Rule-based score: ${score}/100. A screening aid, not proof of fraud; verify the unit and who can rent it.`).className = "score-note";
+
     const toggle = overlay.shadow.querySelector(".toggle");
     toggle.classList.remove("hidden");
     toggle.textContent = "🔎 See details";
     toggle.setAttribute("aria-expanded", "false");
-    overlay.shadow.querySelector(".retry").classList.toggle("hidden", score === 0);
-    overlay.launcher.dataset.status = status;
-    overlay.launcher.querySelector("span:last-child").textContent = `${label} · ${score}/100`;
+    overlay.shadow.querySelector(".retry").classList.toggle("hidden", light.color === "green");
+    overlay.launcher.dataset.status = light.status;
+    overlay.launcher.querySelector("span:last-child").textContent = flags.length
+      ? `${light.headline} · ${flagCountText(flags.length)}`
+      : light.headline;
   }
 
   function renderDetailError(error) {
@@ -836,14 +856,16 @@
     if (!response?.ok) throw new Error(response?.error || "Could not reach the analysis service.");
     const analysis = response.result;
     if (typeof analysis?.fake !== "boolean"
+      || !["green", "yellow", "red"].includes(analysis?.risk_light?.color)
+      || !Number.isInteger(analysis?.risk_light?.warnings)
       || !Number.isInteger(analysis?.votes?.fake)
       || !Number.isInteger(analysis?.votes?.real)
       || !Number.isInteger(analysis?.votes?.unknown)
-      || analysis.votes.fake + analysis.votes.real + analysis.votes.unknown !== 6
-      || analysis.fake !== (analysis.votes.fake > analysis.votes.real)
       || typeof analysis.review_check_available !== "boolean"
       || !Array.isArray(analysis?.trees)
-      || analysis.trees.length !== 6
+      || analysis.trees.length < 1
+      || analysis.trees.length > 6
+      || analysis.votes.fake + analysis.votes.real + analysis.votes.unknown !== analysis.trees.length
       || !analysis.trees.every((tree) => typeof tree === "string" && /^(?:fake|real|unknown)\s*\|\s*[a-z0-9_]+\s*\|\s*\S/i.test(tree))) {
       throw new Error("The backend replied, but its result format is outdated. Restart the updated backend and try again.");
     }

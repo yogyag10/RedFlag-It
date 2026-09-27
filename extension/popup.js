@@ -8,12 +8,6 @@ function show(active) {
   sections.forEach((name) => $(name).classList.toggle("hidden", name !== active));
 }
 
-function classify(score) {
-  if (score >= 60) return { key: "possible", label: "Scam Possible" };
-  if (score >= 30) return { key: "careful", label: "Be Careful" };
-  return { key: "low", label: "Low Risk" };
-}
-
 function scoreOf(result = {}) {
   return Math.max(0, Math.min(100, Math.round(Number(result.risk_score) || 0)));
 }
@@ -21,20 +15,38 @@ function scoreOf(result = {}) {
 function hasVoteContract(payload) {
   const votes = payload?.votes;
   return typeof payload?.fake === "boolean"
+    && ["green", "yellow", "red"].includes(payload?.risk_light?.color)
+    && Number.isInteger(payload?.risk_light?.warnings)
     && Number.isInteger(votes?.fake)
     && Number.isInteger(votes?.real)
     && Number.isInteger(votes?.unknown)
     && votes.fake >= 0
     && votes.real >= 0
     && votes.unknown >= 0
-    && votes.fake + votes.real + votes.unknown === 6
     && typeof payload.review_check_available === "boolean"
     && Array.isArray(payload.consensus_rules)
     && payload.consensus_rules.every((rule) => typeof rule === "string")
     && Array.isArray(payload.trees)
-    && payload.trees.length === 6
-    && payload.trees.every((tree) => typeof tree === "string" && /^(?:fake|real|unknown)\s*\|\s*[a-z0-9_]+\s*\|\s*\S/i.test(tree))
-    && payload.fake === (votes.fake > votes.real);
+    && payload.trees.length >= 1
+    && payload.trees.length <= 6
+    && votes.fake + votes.real + votes.unknown === payload.trees.length
+    && payload.trees.every((tree) => typeof tree === "string" && /^(?:fake|real|unknown)\s*\|\s*[a-z0-9_]+\s*\|\s*\S/i.test(tree));
+}
+
+// Trees from the trained fraud model each check one behaviour.
+const MODEL_TREE_LABELS = {
+  model_deposit_demand: "Deposit demand",
+  model_personal_info_request: "Personal info request",
+  model_etransfer_request: "E-transfer request",
+  model_high_demand_claim: "High-demand pressure",
+  model_foreign_payment: "Payment sent abroad",
+  model_price: "Low price",
+};
+
+function modelTreeLabel(code) {
+  if (MODEL_TREE_LABELS[code]) return MODEL_TREE_LABELS[code];
+  const number = /^model_tree_(\d+)$/.exec(code || "")?.[1];
+  return number ? `Model tree ${number}` : null;
 }
 
 async function currentTab() {
@@ -153,6 +165,12 @@ const RULE_ICONS = {
   verification_code: "code",
   pressure_tactic: "pressure",
   review_checker: "reviews",
+  model_deposit_demand: "payment",
+  model_personal_info_request: "code",
+  model_etransfer_request: "transfer",
+  model_high_demand_claim: "pressure",
+  model_foreign_payment: "landlord",
+  model_price: "payment",
 };
 
 function makeIcon(name, extraClass = "") {
@@ -181,109 +199,100 @@ function parseTreeVote(value) {
   return { vote, code, rule: ruleParts.join(" | ") };
 }
 
+// Traffic light: green = no red flags, yellow = one, red = two or more.
+const LIGHTS = {
+  green: { status: "low", dot: "🟢", headline: "No red flags", label: "No warning signs found", rank: 0 },
+  yellow: { status: "careful", dot: "🟡", headline: "Check first", label: "1 warning sign: check before paying", rank: 1 },
+  red: { status: "possible", dot: "🔴", headline: "High risk", label: "2+ warning signs: high risk", rank: 2 },
+};
+
+// Only the checks the listing failed. A low price is a red flag only
+// alongside another one, matching the backend's risk_light.
+function redFlags(summary) {
+  const failed = (Array.isArray(summary?.trees) ? summary.trees : [])
+    .map(parseTreeVote)
+    .filter((row) => row.vote === "fake");
+  return failed.some((row) => row.code !== "model_price") ? failed : [];
+}
+
+function lightOf(summary) {
+  const sent = summary?.risk_light?.color;
+  const count = redFlags(summary).length;
+  const color = LIGHTS[sent] ? sent : count === 0 ? "green" : count === 1 ? "yellow" : "red";
+  return { color, ...LIGHTS[color], label: summary?.risk_light?.label || LIGHTS[color].label };
+}
+
+function flagCountText(count) {
+  return count === 0 ? "No red flags" : count === 1 ? "1 red flag" : `${count} red flags`;
+}
+
+function makeSemaphore(color) {
+  const light = makeElement("span", "semaphore");
+  light.dataset.light = color;
+  light.setAttribute("role", "img");
+  light.setAttribute("aria-label", `Traffic light: ${color}`);
+  ["red", "yellow", "green"].forEach((lamp) => light.append(makeElement("i", `lamp-${lamp}`)));
+  return light;
+}
+
+function flagLabel(row) {
+  if (row.code === "review_checker") return "Low public seller rating";
+  return VOTE_RULE_LABELS[row.code] || modelTreeLabel(row.code) || row.rule || "Warning sign";
+}
+
 function buildVoteDetails(analysis, result = null) {
   const summary = result || analysis;
   const panel = makeElement("div", "room-details hidden vote-details");
-  const votes = summary.votes || { fake: 0, real: 0 };
-  const storedUnknown = Number.isInteger(votes.unknown);
-  const unknownVotes = storedUnknown ? votes.unknown : summary.review_check_available === false ? 1 : 0;
-  const realVotes = Math.max(0, votes.real - (!storedUnknown ? unknownVotes : 0));
-  panel.dataset.verdict = summary.fake ? "fake" : "real";
+  const flags = redFlags(summary);
+  panel.dataset.verdict = lightOf(summary).color;
 
-  const tally = makeElement("div", "vote-tally");
-  tally.setAttribute("role", "group");
-  tally.setAttribute("aria-label", `${votes.fake} warning votes, ${realVotes} clear checks, ${unknownVotes} unknown checks`);
-  const fakeCount = makeElement("span", "vote-count warning-count");
-  fakeCount.append(makeIcon("warning"), makeElement("strong", "", String(votes.fake)), makeElement("span", "", "warning"));
-  fakeCount.setAttribute("aria-label", `${votes.fake} warning votes`);
-  const realCount = makeElement("span", "vote-count clear-count");
-  realCount.append(makeIcon("check"), makeElement("strong", "", String(realVotes)), makeElement("span", "", "clear"));
-  realCount.setAttribute("aria-label", `${realVotes} checks without a warning match`);
-  const unknownCount = makeElement("span", "vote-count unknown-count");
-  unknownCount.append(makeIcon("info"), makeElement("strong", "", String(unknownVotes)), makeElement("span", "", "unknown"));
-  unknownCount.setAttribute("aria-label", `${unknownVotes} unknown checks`);
-  tally.append(fakeCount, realCount, unknownCount);
-
-  const ruleSection = makeElement("section", "detail-section vote-rule-section");
-  const ruleHeading = makeElement("h3", "detail-heading");
-  const rules = Array.isArray(summary.consensus_rules) ? summary.consensus_rules : [];
-  ruleHeading.append(makeIcon(rules.length ? "warning" : "check"), makeElement("span", "", "Warning signs"));
-  ruleSection.append(ruleHeading);
-  if (rules.length) {
-    const list = makeElement("ul", "vote-rule-list");
-    rules.forEach((rule) => {
-      const item = makeElement("li", "vote-rule-row");
-      item.append(makeIcon("warning", "warning-icon"), makeElement("span", "", rule));
-      item.setAttribute("aria-label", `Warning rule matched: ${rule}`);
+  const section = makeElement("section", "detail-section vote-rule-section");
+  const heading = makeElement("h3", "detail-heading");
+  heading.append(makeIcon(flags.length ? "warning" : "check"), makeElement("span", "", `Red flags (${flags.length})`));
+  section.append(heading);
+  if (flags.length) {
+    const signalByCode = new Map((summary.signals || []).map((signal) => [signal.code, signal]));
+    const list = makeElement("ul", "vote-tree-list");
+    flags.forEach((row) => {
+      const label = flagLabel(row);
+      const item = makeElement("li", "vote-tree-row");
+      item.dataset.vote = "fake";
+      item.append(
+        makeIcon(RULE_ICONS[row.code] || "info", "tree-kind-icon"),
+        makeIcon("warning", "tree-vote-icon"),
+        makeElement("span", "tree-title", label)
+      );
+      const signal = signalByCode.get(row.code === "review_checker" ? "low_public_review_rating" : row.code);
+      const note = [...new Set([row.rule, signal?.detail, signal?.evidence ? `Listing text: “${signal.evidence}”` : ""].filter(Boolean))].join(". ");
+      if (note) item.append(makeElement("small", "vote-tree-note", note));
+      item.setAttribute("aria-label", `Red flag: ${label}`);
       list.append(item);
     });
-    ruleSection.append(list);
+    section.append(list);
   } else {
-    const item = makeElement("p", "no-rules");
-    item.append(makeIcon("check", "clear-icon"), makeElement("span", "", "No warning rule matched"));
-    ruleSection.append(item);
+    const none = makeElement("p", "no-rules");
+    none.append(makeIcon("check", "clear-icon"), makeElement("span", "", "No red flags found. This listing passed all of the checks."));
+    section.append(none);
   }
-
-  const breakdown = document.createElement("details");
-  breakdown.className = "vote-breakdown";
-  breakdown.open = true;
-  const breakdownHeading = makeElement("summary");
-  breakdownHeading.append(makeIcon("info"), makeElement("span", "", `${votes.fake + realVotes + unknownVotes} safety factors`));
-  breakdown.append(breakdownHeading);
-  const treeList = makeElement("ul", "vote-tree-list");
-  const signalByCode = new Map((summary.signals || []).map((signal) => [signal.code, signal]));
-  (Array.isArray(summary.trees) ? summary.trees : []).forEach((tree) => {
-    const parsed = parseTreeVote(tree);
-    const reviewUnavailable = parsed.code === "review_checker" && !summary.review_check_available;
-    const reviewLabel = "Public seller reviews";
-    const label = parsed.code === "review_checker"
-      ? reviewLabel
-      : VOTE_RULE_LABELS[parsed.code] || parsed.rule || "Rental warning check";
-    const signalCode = parsed.code === "review_checker" ? "low_public_review_rating" : parsed.code;
-    const signal = signalByCode.get(signalCode);
-    const item = makeElement("li", "vote-tree-row");
-    const unknownVote = reviewUnavailable || parsed.vote === "unknown";
-    item.dataset.vote = unknownVote ? "unknown" : parsed.vote;
-    item.append(
-      makeIcon(RULE_ICONS[parsed.code] || "info", "tree-kind-icon"),
-      makeIcon(unknownVote ? "info" : parsed.vote === "fake" ? "warning" : "check", `tree-vote-icon${unknownVote ? " unknown-icon" : ""}`),
-      makeElement("span", "tree-title", label)
-    );
-    const noteParts = [];
-    if (parsed.rule) noteParts.push(parsed.rule);
-    if (signal?.detail) noteParts.push(signal.detail);
-    if (signal?.evidence) noteParts.push(`Listing text: “${signal.evidence}”`);
-    if (parsed.code === "review_checker") noteParts.push(summary.review_check_available
-      ? "Visible seller rating checked; written review text and rental history are not checked."
-      : "Seller review data was not visible or had too few ratings to assess; written review text and rental history are not checked.");
-    if (noteParts.length) item.append(makeElement("small", "vote-tree-note", [...new Set(noteParts)].join(". ")));
-    item.setAttribute("aria-label", unknownVote
-      ? "Review information unavailable or too limited to assess."
-      : `${parsed.vote === "fake" ? "Warning found" : "No warning found"}: ${label}`);
-    treeList.append(item);
-  });
-  if (treeList.childElementCount) breakdown.append(treeList);
-  else breakdown.append(makeElement("p", "legacy-votes", "Rule-vote details unavailable"));
-
-  const note = makeElement("p", "vote-note", "Visible seller rating is checked. Written review text and rental history are not checked.");
+  const note = makeElement("p", "vote-note", `Rule-based score: ${scoreOf(summary)}/100. A screening aid, not proof of fraud.`);
   note.setAttribute("role", "note");
-  panel.append(tally, ruleSection, breakdown, note);
+  panel.append(section, note);
   return panel;
 }
 
 function resultCard({ name, result, analysis, isRecent = false }) {
-  const score = scoreOf(result);
-  const status = classify(score);
+  const light = lightOf(result);
   const card = makeElement("article", `room-card${isRecent ? " recent-card" : ""}`);
-  card.dataset.status = status.key;
-  card.dataset.zeroScore = String(score === 0);
+  card.dataset.status = light.status;
+  card.dataset.zeroScore = String(light.color === "green");
   const heading = makeElement("h2", "room-heading", name || "Rental listing");
   const risk = makeElement("div", "risk-line");
   risk.append(
-    makeIcon(status.key === "low" ? "check" : "warning", "risk-icon"),
-    makeElement("strong", "risk-score", `${score} / 100`),
-    makeElement("span", "risk-label", status.label)
+    makeSemaphore(light.color),
+    makeElement("strong", "risk-score", light.headline),
+    makeElement("span", "risk-label", redFlags(result).length ? flagCountText(redFlags(result).length) : "All checks passed")
   );
+  risk.setAttribute("aria-label", `${light.headline}: ${light.label}`);
   const toggle = makeElement("button", "see-more");
   toggle.type = "button";
   toggle.setAttribute("aria-expanded", "false");
@@ -309,10 +318,10 @@ function renderRoomOverview(results) {
   overview.classList.toggle("hidden", results.length < 2);
   if (results.length < 2) return;
   results.forEach((entry, index) => {
-    const status = classify(scoreOf(entry.result));
-    const chip = makeElement("button", "room-chip", `${entry.name} · ${scoreOf(entry.result)} / 100 · ${status.label}`);
+    const light = lightOf(entry.result);
+    const chip = makeElement("button", "room-chip", `${entry.name} · ${light.dot} ${light.headline}`);
     chip.type = "button";
-    chip.dataset.status = status.key;
+    chip.dataset.status = light.status;
     chip.addEventListener("click", () => {
       $(`room-card-${index}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });
@@ -335,7 +344,7 @@ function render(analysis, listing) {
   });
   renderRecent();
   show("result");
-  document.body.dataset.zeroScore = String(entries.every((entry) => scoreOf(entry.result) === 0));
+  document.body.dataset.zeroScore = String(entries.every((entry) => lightOf(entry.result).color === "green"));
 }
 
 function safeSnapshot(listing = {}) {
@@ -396,7 +405,10 @@ async function saveRecent(analysis, listing) {
     const snapshot = safeSnapshot(listing);
     if (isPlaceholderTitle(snapshot.title)) return;
     const overall = analysis.room_results?.length
-      ? analysis.room_results.reduce((riskiest, room) => scoreOf(room) > scoreOf(riskiest) ? room : riskiest)
+      ? analysis.room_results.reduce((riskiest, room) => {
+        const [a, b] = [lightOf(room).rank, lightOf(riskiest).rank];
+        return a > b || (a === b && scoreOf(room) > scoreOf(riskiest)) ? room : riskiest;
+      })
       : analysis;
     history.unshift({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,

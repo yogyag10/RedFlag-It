@@ -8,7 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .anomaly import is_density_outlier
-from .risk import RiskResult, add_signal, analyze_text, classify, summarize, vote_summary
+from .model_votes import model_status, model_vote_summary
+from .risk import RiskResult, add_signal, analyze_text, classify, summarize
 from .schemas import (
     Baseline,
     FurnishFinderResult,
@@ -81,7 +82,12 @@ app.add_middleware(
 @app.get("/health")
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "database_configured": store.enabled, "vision": embedder.status}
+    return {
+        "status": "ok",
+        "database_configured": store.enabled,
+        "vision": embedder.status,
+        "fraud_model": model_status(),
+    }
 
 
 @app.post(
@@ -123,8 +129,9 @@ async def analyze_listing(listing: ListingRequest):
             "rooms": [],
         })
         room_risk = analyze_text(room_listing)
+        room_votes = await asyncio.to_thread(model_vote_summary, room_listing, room_risk)
         room_results.append(RoomAnalysis(
-            **vote_summary(room_risk),
+            **room_votes,
             name=room.name,
             risk_score=room_risk.score,
             risk_level=classify(room_risk.score),
@@ -218,6 +225,7 @@ async def analyze_listing(listing: ListingRequest):
         ), 12)
 
     level, summary = summarize(result.score)
+    votes = await asyncio.to_thread(model_vote_summary, listing, result)
     furnishing_available = vision.status == "ready" and any(
         image.get("embedding") is not None for image in vision.images
     )
@@ -254,7 +262,7 @@ async def analyze_listing(listing: ListingRequest):
         ),
     )
     return ListingAnalysis(
-        **vote_summary(result),
+        **votes,
         risk_score=result.score,
         risk_level=level,
         summary=summary,

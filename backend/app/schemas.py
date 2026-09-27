@@ -80,12 +80,23 @@ class VoteCounts(BaseModel):
     unknown: int = Field(default=0, ge=0, le=6)
 
 
+class RiskLight(BaseModel):
+    """Traffic-light summary of the vote: green = no warning signs, yellow = one,
+    red = two or more. A low price counts only alongside another warning sign."""
+    color: Literal["green", "yellow", "red"]
+    warnings: int = Field(ge=0, le=6)
+    label: str
+
+
 class VoteSummary(BaseModel):
     fake: bool
     votes: VoteCounts
+    risk_light: RiskLight
     review_check_available: bool
     consensus_rules: list[str] = Field(default_factory=list)
-    trees: list[str] = Field(min_length=6, max_length=6)
+    # One "vote | code | rule" string per tree of the fraud model (5), or per
+    # rule check (6) when the model is unavailable.
+    trees: list[str] = Field(min_length=1, max_length=6)
 
 
 class RoomAnalysis(VoteSummary):
