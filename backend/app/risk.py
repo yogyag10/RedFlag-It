@@ -63,7 +63,12 @@ RULES: list[tuple[str, re.Pattern[str], str, str, int]] = [
 ]
 
 
-def analyze_text(listing: ListingRequest) -> RiskResult:
+def analyze_text(
+    listing: ListingRequest,
+    *,
+    photos_available: bool | None = None,
+    include_completeness_signals: bool = True,
+) -> RiskResult:
     text = f"{listing.title}\n{listing.description}"
     points = 0
     signals: list[Signal] = []
@@ -81,7 +86,7 @@ def analyze_text(listing: ListingRequest) -> RiskResult:
                 evidence_source=evidence_source,
             ))
 
-    if len(listing.description.strip()) < 35:
+    if include_completeness_signals and len(listing.description.strip()) < 35:
         points += 4
         signals.append(Signal(
             code="sparse_description",
@@ -90,7 +95,7 @@ def analyze_text(listing: ListingRequest) -> RiskResult:
             severity="low",
         ))
 
-    if not listing.image_urls:
+    if include_completeness_signals and not (photos_available if photos_available is not None else bool(listing.image_urls)):
         points += 2
         signals.append(Signal(
             code="no_listing_images",
@@ -109,9 +114,19 @@ def add_signal(result: RiskResult, signal: Signal, points: int) -> None:
     result.score = min(100, result.score + points)
 
 
-def summarize(score: int) -> tuple[str, str]:
+def classify(score: int) -> str:
     if score >= 60:
-        return "Higher signal", "Several warning signs need careful verification before you proceed."
+        return "SCAM POSSIBLE"
     if score >= 30:
-        return "Review signals", "Some details deserve a closer check before you reply or pay."
-    return "Lower signal", "Few automated warning signs were found in the available listing details."
+        return "BE CAREFUL"
+    return "LOW RISK"
+
+
+def summarize(score: int) -> tuple[str, str]:
+    level = classify(score)
+    summary = {
+        "LOW RISK": "Few common warning signs were found.",
+        "BE CAREFUL": "Some details deserve a closer look.",
+        "SCAM POSSIBLE": "Several warning signs need careful verification.",
+    }[level]
+    return level, summary

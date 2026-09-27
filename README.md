@@ -1,13 +1,17 @@
 # RedFlag
 
-A Manifest V3 Chrome extension and local FastAPI service for screening rental listings on Craigslist and Facebook Marketplace. It reports explainable warning signs; it does not decide whether a listing is fraudulent.
+A Manifest V3 Chrome extension and local FastAPI service for screening rental listings on Craigslist, Facebook Marketplace, and Furnished Finder. It reports explainable warning signs; it does not decide whether a listing is fraudulent.
 ## What it does
 
-- Reads the visible listing title, description, price, location coordinates when exposed by the page, and up to eight public image URLs after you click **Run check**.
+- Adds a lightweight text-score bubble to visible rental search results. Opening a single Craigslist, Facebook Marketplace, or Furnished Finder listing runs its full check and shows a RedFlag bubble with that listing's score; select **See details** for evidence. The extension reads the listing page DOM and does not use marketplace cookies.
+- On a result card, only the visible title and short card text are sent to `/api/quick-scores`. Opening an individual listing sends its visible text, details, source URL, and up to eight public photo links to `/api/analyze`. Explicitly labeled room options can receive separate results; ambiguous room counts are not split into invented options.
 - Checks listing language for payment-before-viewing requests, hard-to-reverse payment methods, requests for verification codes, unavailable landlords, and pressure tactics.
-- Optionally uses a local OpenCLIP model for image and text embeddings. It can flag a weak text/photo match and compare a photo with recent photos previously analyzed by the same service.
+- Optionally uses a local OpenCLIP model for image and text matching, photo reuse checks, and a likely-visible furniture estimate. Furniture matching is a semantic photo estimate, not object detection or proof that an item is included.
 - Optionally stores minimal listing features in PostgreSQL/PostGIS. With enough nearby history, scikit-learn DBSCAN checks for price-and-location density outliers.
-- Shows a compact animated score ring, text/photo/local-history coverage, and expandable signal cards. Text-based flags include the short phrase that triggered the rule and where it appeared. The score is a triage aid, not a probability, market valuation, or proof of fraud.
+- Shows only a risk score and one of three classifications by default: **LOW RISK**, **BE CAREFUL**, or **SCAM POSSIBLE**. **See More** reveals signals, evidence, listing-provided facts, Furnish Finder, profile information visible on the page, and verification steps.
+- Keeps up to five recent checks in Chrome storage on this device. History contains the listing title, results, and short evidence excerpts; it omits the structured address field, listing URL, photo links, and full description. The score is a triage aid, not a probability, market valuation, or proof of fraud.
+
+Risk bands are 0–29 (**LOW RISK**), 30–59 (**BE CAREFUL**), and 60–100 (**SCAM POSSIBLE**). The percentage is a rule-based screening score, not a calibrated chance of fraud.
 
 The project uses OpenCLIP with LAION pretrained weights. It does not send listing content to OpenAI or another model API. CLIP weights are downloaded by the vision-enabled service on its first model use.
 
@@ -23,7 +27,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000/health` to check service status. The base install runs text checks. For optional image and text matching, install `requirements-vision.txt`; OpenCLIP downloads its model weights the first time it analyzes listing photos. Set `RENTSHIELD_DATABASE_URL` to use an existing PostgreSQL/PostGIS database for private listing history, or `RENTSHIELD_API_KEY` to require a bearer token. `RENTSHIELD_CLIP_DEVICE` defaults to `cpu`.
+Open `http://127.0.0.1:8000/health` to check service status. The base install runs text checks. To enable photo matching and furniture estimates, install `requirements-vision.txt`; OpenCLIP downloads its model weights the first time it analyzes listing photos. Set `RENTSHIELD_DATABASE_URL` to use an existing PostgreSQL/PostGIS database for private listing history, or `RENTSHIELD_API_KEY` to require a bearer token. `RENTSHIELD_CLIP_DEVICE` defaults to `cpu`.
 
 The database has no listing history initially. Geographic price and cross-listing image comparisons become available only after the configured database accumulates analyzed listings. Craigslist coordinates are read where exposed; Facebook pages may not expose coordinates, so location-based checks may be unavailable there.
 
@@ -31,21 +35,21 @@ The database has no listing history initially. Geographic price and cross-listin
 
 1. Visit `chrome://extensions` and enable **Developer mode**.
 2. Choose **Load unpacked** and select this repository’s `extension` folder.
-3. Open a rental listing on Craigslist or Facebook Marketplace, click the extension icon, then click **Run check**.
+3. Open a rental search on Craigslist, Facebook Marketplace, or Furnished Finder. RedFlag adds quick-score bubbles to result cards. Open a result to see its full check bubble and select **See details** for evidence.
 4. Use the gear button to change the service URL or add the API key if you changed the local configuration.
 
-The extension requests access only to Craigslist, Facebook Marketplace, and the local API by default. For a remote API, add its URL in Settings and approve Chrome’s host permission prompt. Use HTTPS and a service you control.
+The extension requests access only to Craigslist, Facebook Marketplace, Furnished Finder, and the local API by default. For a remote API, add its URL in Settings and approve Chrome’s host permission prompt. Use HTTPS and a service you control.
 
 ## API
 
-`POST /api/analyze` accepts JSON with `title`, `description`, optional numeric `bedrooms` and `bathrooms`, optional `address`, `price`, `currency`, `price_period`, `location_text`, optional `latitude`/`longitude`, `image_urls`, and `source_url`. Unavailable numeric or address values are `null`; text values default to empty strings and `image_urls` to an empty array. Image fetches are limited to Craigslist and Facebook media hosts, validate each of up to three redirects, reject private IP addresses and non-image content, and cap image size at 8 MiB. The popup allows two minutes for a first model load; retry after the initial weights download has completed if needed.
+`POST /api/quick-scores` accepts up to 20 `{id, title, description, photo_available}` card summaries and returns lightweight text-warning scores without adding points for fields that search cards do not show. These quick scores do not save listings or download photos. The full `/api/analyze` check accepts `title`, `description`, `bedrooms`, `bathrooms`, `address`, `price`, `currency`, `price_period`, `location_text`, `latitude`, `longitude`, `image_urls`, and `source_url`, plus optional `rooms`, `profile_facts`, `listing_age`, and `availability_text`. Scores are points out of 100, not percentages or scam probabilities. Explicit room options receive separate rule-based scores. Photo furnishing estimates use local CLIP semantic comparisons when the model and public photos are available; otherwise the response explains that the photo check is unavailable. Image fetches are limited to Craigslist, Facebook, and Furnished Finder media hosts, validate each of up to three redirects, reject private IP addresses and non-image content, and cap image size at 8 MiB. Unavailable numeric or address values are `null`; text values default to empty strings and `image_urls` to an empty array. The first local model load may take longer than later checks.
 
 `GET /health` reports service, database configuration, and vision initialization status. `RENTSHIELD_API_KEY` protects analysis requests with `Authorization: Bearer <key>`; local health remains open.
 
 ## Data and privacy
 
-- The extension analyzes a page only after the user clicks the button. It does not scrape pages in the background or request account, payment, bank, or financial vendor data.
-- The extension sends the visible listing fields and public image URLs to the configured service. The service fetches public photos for local analysis.
+- On supported search and listing pages, the extension automatically analyzes visible result-card text and the opened listing. It does not run a crawler or visit listings you did not open. It reads the page rendered in your browser; it does not send browser cookies or request account, payment, bank, or financial-vendor data.
+- Search-card checks send only the card title and short visible text to the configured service. Opening a listing also sends its visible listing fields and public photo URLs. The service may fetch public photos without the Facebook login session; Facebook can block these requests. It does not send the seller's name or session cookies.
 - Without `RENTSHIELD_DATABASE_URL`, listing content is processed in memory and not retained by this application.
 - With the database enabled, it retains timestamps, asking price/currency/period, optional coordinates, image SHA-256 hashes, perceptual hashes, and CLIP embeddings. It also stores a one-way SHA-256 fingerprint of a source URL to avoid counting repeat checks as separate listings; it does not store the raw URL, listing text, contact details, or image files. The database is empty on first run and is private to the service owner.
 - The service URL and API key are stored in Chrome local extension storage. Configure an API key before exposing any service beyond loopback.

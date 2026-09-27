@@ -18,7 +18,7 @@
     <section class="intro">
       <p class="section-kicker">YOUR ANALYSIS SERVICE</p>
       <h2>Choose where a listing is checked.</h2>
-      <p>By default, checks run on the service on your own computer. Use a remote service only if you trust who runs it.</p>
+      <p>Quick text checks run on visible search-result cards. Opening a listing runs its full check. By default, checks go to the service on your own computer; use a remote service only if you trust who runs it.</p>
     </section>
 
     <section class="card" aria-labelledby="service-heading">
@@ -45,12 +45,13 @@
         <span class="privacy-mark" aria-hidden="true">
           <svg viewBox="0 0 20 20"><rect x="3.5" y="8.5" width="13" height="9" rx="2"/><path d="M6.5 8V6a3.5 3.5 0 0 1 7 0v2"/></svg>
         </span>
-        <div><h2 id="privacy-heading">Your listing information</h2><p>You choose when a check starts.</p></div>
+        <div><h2 id="privacy-heading">Your listing information</h2><p>RedFlag checks cards and listing pages you open.</p></div>
       </div>
       <ul class="privacy-list">
-        <li><strong>Sent after you click Check:</strong> the listing title and text, asking price, page address, and up to eight public photo links.</li>
-        <li><strong>Photo review:</strong> the service may download those photos to compare them with the listing text.</li>
-        <li><strong>Saved information:</strong> listings are not kept unless the service has a database configured.</li>
+        <li><strong>Search cards:</strong> only the visible card title and short text are sent for a quick score. Photo URLs and browser cookies are not sent for this check.</li>
+        <li><strong>Opened listing:</strong> the title, description, price, visible details, source URL, and up to eight public photo links are sent to your configured analysis service. The extension does not send your marketplace cookies.</li>
+        <li><strong>Photo review:</strong> the service may request public photo URLs without your browser cookies. Facebook may block some photo links, so image review can be unavailable.</li>
+        <li><strong>Saved information:</strong> local Recent Checks stay in Chrome. Server-side listing history is used only if you configure a database.</li>
       </ul>
       <p class="privacy-footnote">The extension does not request payment, banking, or financial vendor information.</p>
     </section>

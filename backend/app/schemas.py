@@ -1,7 +1,15 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator
+
+
+class RoomRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=12_000)
+    price: float | None = Field(default=None, gt=0, le=1_000_000)
+    bedrooms: float | None = Field(default=None, ge=0, le=100)
+    bathrooms: float | None = Field(default=None, ge=0, le=100)
 
 
 class ListingRequest(BaseModel):
@@ -18,11 +26,26 @@ class ListingRequest(BaseModel):
     longitude: float | None = Field(default=None, ge=-180, le=180)
     image_urls: list[HttpUrl] = Field(default_factory=list, max_length=8)
     source_url: HttpUrl | None = None
+    rooms: list[RoomRequest] = Field(default_factory=list, max_length=6)
+    profile_facts: list[Annotated[str, Field(max_length=200)]] = Field(default_factory=list, max_length=6)
+    listing_age: str | None = Field(default=None, max_length=100)
+    availability_text: str | None = Field(default=None, max_length=200)
 
     @field_validator("currency")
     @classmethod
     def normalize_currency(cls, value: str) -> str:
         return value.upper()
+
+
+class QuickListingRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    title: str = Field(default="", max_length=300)
+    description: str = Field(default="", max_length=1_200)
+    photo_available: bool = False
+
+
+class QuickScoreBatchRequest(BaseModel):
+    listings: list[QuickListingRequest] = Field(min_length=1, max_length=20)
 
 
 class Signal(BaseModel):
@@ -34,15 +57,42 @@ class Signal(BaseModel):
     evidence_source: Literal["title", "description"] | None = None
 
 
+class QuickScore(BaseModel):
+    id: str
+    risk_score: int = Field(ge=0, le=100)
+    risk_level: Literal["LOW RISK", "BE CAREFUL", "SCAM POSSIBLE"]
+    signals: list[Signal]
+
+
+class QuickScoreBatchResponse(BaseModel):
+    results: list[QuickScore]
+
+
 class Baseline(BaseModel):
     available: bool
     peer_count: int = 0
     message: str
 
 
+class RoomAnalysis(BaseModel):
+    name: str
+    risk_score: int = Field(ge=0, le=100)
+    risk_level: Literal["LOW RISK", "BE CAREFUL", "SCAM POSSIBLE"]
+    signals: list[Signal]
+
+
+class FurnishFinderResult(BaseModel):
+    available: bool
+    summary: str
+    likely_visible_items: list[str] = Field(default_factory=list)
+    mentioned_items: list[str] = Field(default_factory=list)
+    not_confirmed_items: list[str] = Field(default_factory=list)
+    note: str
+
+
 class ListingAnalysis(BaseModel):
     risk_score: int = Field(ge=0, le=100)
-    risk_level: Literal["Lower signal", "Review signals", "Higher signal"]
+    risk_level: Literal["LOW RISK", "BE CAREFUL", "SCAM POSSIBLE"]
     summary: str
     signals: list[Signal]
     baseline: Baseline
@@ -50,4 +100,6 @@ class ListingAnalysis(BaseModel):
     photos_processed: int = 0
     photo_text_match_available: bool = False
     price_comparison_available: bool = False
+    room_results: list[RoomAnalysis] = Field(default_factory=list)
+    furnish_finder: FurnishFinderResult
     analyzed_at: datetime

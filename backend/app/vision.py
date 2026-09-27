@@ -6,7 +6,7 @@ import io
 import ipaddress
 import os
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -22,6 +22,19 @@ class VisionResult:
     status: str
     text_image_similarity: float | None
     images: list[dict]
+    furniture_items: list[str] = field(default_factory=list)
+
+
+FURNITURE_PROMPTS = (
+    ("Bed", "a rental-room photo with a clearly visible bed", "a rental room photo with no bed visible"),
+    ("Desk", "a rental-room photo with a clearly visible desk", "a rental room photo with no desk visible"),
+    ("Chair", "a rental-room photo with a clearly visible chair", "a rental room photo with no chair visible"),
+    ("Sofa", "a rental-room photo with a clearly visible sofa", "a rental room photo with no sofa visible"),
+    ("Table", "a rental-room photo with a clearly visible table", "a rental room photo with no table visible"),
+    ("Dresser", "a rental-room photo with a clearly visible dresser", "a rental room photo with no dresser visible"),
+    ("Wardrobe", "a rental-room photo with a clearly visible wardrobe", "a rental room photo with no wardrobe visible"),
+    ("Lamp", "a rental-room photo with a clearly visible lamp", "a rental room photo with no lamp visible"),
+)
 
 
 def _public_image_url(raw_url: str) -> bool:
@@ -37,7 +50,7 @@ def _public_image_url(raw_url: str) -> bool:
     host = parsed.hostname.rstrip(".").lower()
     if host in {"localhost", "localhost.localdomain"} or host.endswith((".localhost", ".local", ".internal")):
         return False
-    allowed_hosts = ("craigslist.org", "facebook.com", "fbcdn.net", "fbsbx.com")
+    allowed_hosts = ("craigslist.org", "facebook.com", "fbcdn.net", "fbsbx.com", "furnishedfinder.com")
     if not any(host == suffix or host.endswith(f".{suffix}") for suffix in allowed_hosts):
         return False
     try:
@@ -59,6 +72,8 @@ async def _download_image(url: str) -> bytes | None:
         initial_host = (urlsplit(url).hostname or "").lower()
         if initial_host.endswith(("facebook.com", "fbcdn.net", "fbsbx.com")):
             headers["Referer"] = "https://www.facebook.com/marketplace/"
+        elif initial_host.endswith("furnishedfinder.com"):
+            headers["Referer"] = "https://www.furnishedfinder.com/"
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, headers=headers) as client:
             current_url = url
             for redirect_count in range(4):
@@ -102,6 +117,8 @@ class ClipEmbedder:
         self._attempted = False
         self.dimension = 512
         self._lock = asyncio.Lock()
+        self._furniture_features: np.ndarray | None = None
+        self._furniture_lock = asyncio.Lock()
 
     async def _load(self) -> bool:
         if self.model is not None:
@@ -153,6 +170,42 @@ class ClipEmbedder:
         except Exception:
             return None
 
+    async def _get_furniture_features(self) -> np.ndarray | None:
+        if self._furniture_features is not None:
+            return self._furniture_features
+        if not await self._load():
+            return None
+        async with self._furniture_lock:
+            if self._furniture_features is not None:
+                return self._furniture_features
+            prompts = [prompt for item in FURNITURE_PROMPTS for prompt in item[1:]]
+
+            def encode():
+                tokens = self.tokenizer(prompts).to(self.device)
+                with self.torch.no_grad():
+                    vectors = self.model.encode_text(tokens)
+                    vectors = vectors / vectors.norm(dim=-1, keepdim=True)
+                return vectors.detach().cpu().numpy().astype(np.float32)
+
+            try:
+                self._furniture_features = await asyncio.to_thread(encode)
+                return self._furniture_features
+            except Exception:
+                return None
+
+    async def _likely_visible_furniture(self, image_vector: np.ndarray) -> list[str]:
+        features = await self._get_furniture_features()
+        if features is None:
+            return []
+        similarities = features @ image_vector
+        found = []
+        for index, (name, _present_prompt, _absent_prompt) in enumerate(FURNITURE_PROMPTS):
+            present, absent = similarities[index * 2:index * 2 + 2]
+            # CLIP similarities are not calibrated object probabilities.
+            if present >= 0.20 and present - absent >= 0.025:
+                found.append(name)
+        return found
+
     async def _encode_image(self, content: bytes) -> tuple[np.ndarray | None, str | None]:
         try:
             from PIL import Image, ImageOps
@@ -182,7 +235,7 @@ class ClipEmbedder:
 
     async def analyze(self, title: str, description: str, urls: list[str]) -> VisionResult:
         if not urls:
-            return VisionResult(status="not_used", text_image_similarity=None, images=[])
+            return VisionResult(status="not_used", text_image_similarity=None, images=[], furniture_items=[])
         text = await self._encode_text(f"{title}. {description}")
 
         async def process(url: str) -> dict | None:
@@ -193,14 +246,28 @@ class ClipEmbedder:
             if not digest:
                 return None
             hash_part, average_hash = digest.split(":", 1)
-            return {"sha256": hash_part, "average_hash": average_hash, "embedding": vector.tolist() if vector is not None else None}
+            likely_visible_items = await self._likely_visible_furniture(vector) if vector is not None else []
+            return {
+                "sha256": hash_part,
+                "average_hash": average_hash,
+                "embedding": vector.tolist() if vector is not None else None,
+                "likely_visible_items": likely_visible_items,
+            }
 
         entries = [entry for entry in await asyncio.gather(*(process(url) for url in urls[:8])) if entry]
         similarity = None
         vectors = [np.asarray(item["embedding"], dtype=np.float32) for item in entries if item["embedding"] is not None]
         if text is not None and vectors:
             similarity = float(np.mean([np.dot(text, vector) for vector in vectors]))
-        return VisionResult(status=self.status, text_image_similarity=similarity, images=entries)
+        furniture_items = list(dict.fromkeys(
+            item for entry in entries for item in entry.get("likely_visible_items", [])
+        ))
+        return VisionResult(
+            status=self.status,
+            text_image_similarity=similarity,
+            images=entries,
+            furniture_items=furniture_items,
+        )
 
 
 embedder = ClipEmbedder()

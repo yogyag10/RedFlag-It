@@ -1,13 +1,20 @@
 {
   "manifest_version": 3,
   "name": "RedFlag",
-  "version": "0.2.0",
+  "version": "0.3.3",
   "description": "Review rental listings for common warning signs before you contact a landlord.",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
     "https://*.craigslist.org/*",
+    "https://craigslist.org/*",
+    "https://facebook.com/marketplace/*",
     "https://www.facebook.com/marketplace/*",
+    "https://furnishedfinder.com/*",
+    "https://*.furnishedfinder.com/*",
     "http://127.0.0.1:8000/*",
     "http://localhost:8000/*"
   ],
@@ -28,7 +35,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.craigslist.org/*", "https://www.facebook.com/marketplace/*"],
+      "matches": ["https://*.craigslist.org/*", "https://craigslist.org/*", "https://facebook.com/marketplace/*", "https://www.facebook.com/marketplace/*", "https://furnishedfinder.com/*", "https://*.furnishedfinder.com/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
