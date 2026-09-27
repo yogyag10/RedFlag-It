@@ -1,17 +1,17 @@
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   font-family: "Avenir Next", Avenir, Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #f2f3f7;
-  background: #101216;
+  color: #12213a;
+  background: #f4f8ff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --ink: #f2f3f7;
-  --muted: #a2a8b5;
-  --quiet: #79818f;
-  --line: #2b303a;
-  --surface: #171a20;
-  --accent: #22d3ee;
-  --accent-bright: #67e8f9;
+  --ink: #12213a;
+  --muted: #334155;
+  --quiet: #526581;
+  --line: #cbd5e1;
+  --surface: #ffffff;
+  --accent: #2563eb;
+  --accent-bright: #1d4ed8;
 }
 
 * { box-sizing: border-box; }
@@ -64,3 +64,25 @@ footer { max-width: 600px; margin: 17px 3px 0; color: var(--quiet); font-size: 1
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* Match the white and blue RedFlag popups. */
+html { color-scheme: light; background: #f4f8ff; }
+body { background: radial-gradient(ellipse at 50% -15%, rgb(59 130 246 / 10%), transparent 42%), #f4f8ff; color: #12213a; }
+.brand-mark { display: block; width: 50px; height: 50px; flex: 0 0 auto; border: 0; border-radius: 13px; background: transparent; object-fit: contain; box-shadow: 0 4px 10px rgb(30 64 175 / 20%); }
+.eyebrow, .section-kicker, .field-hint, footer { color: #526581; }
+.page-header h1, .intro h2, .card-heading h2 { color: #12213a; }
+.intro > p:last-child, .card-heading p, .privacy-list { color: #334155; }
+.card, .privacy-card { border-color: #cbd5e1; background: #fff; box-shadow: 0 8px 22px rgb(30 64 175 / 7%); }
+.card:hover { border-color: #93c5fd; box-shadow: 0 12px 27px rgb(30 64 175 / 12%); }
+.step-number, .privacy-mark { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
+label, label span, .privacy-list strong { color: #12213a; }
+input { border-color: #94a3b8; background: #fff; color: #12213a; }
+input::placeholder { color: #64748b; }
+input:hover { border-color: #3b82f6; }
+input:focus { border-color: #2563eb; background: #fff; box-shadow: 0 0 0 3px rgb(37 99 235 / 14%); }
+#save { border: 2px solid #1d4ed8; background: linear-gradient(110deg,#2563eb,#38bdf8); color: #fff; box-shadow: 0 5px 16px rgb(37 99 235 / 18%); }
+#save:hover { border-color: #1e40af; background-image: linear-gradient(110deg,#1d4ed8,#0ea5e9); color: #fff; box-shadow: 0 8px 19px rgb(37 99 235 / 22%); }
+.status, .status.success { color: #166534; }
+.status.error { color: #b91c1c; }
+.privacy-footnote { border-color: #dbeafe; color: #1e3a8a; }
+button:focus-visible, input:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }

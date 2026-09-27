@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">RedFlag safety shield</title>
+  <defs>
+    <linearGradient id="blue-ombre" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset="0.48" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1e40af"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <path d="M64 6 115 25v34c0 31-20 52-51 64C33 111 13 90 13 59V25L64 6Z" fill="#1e3a8a" opacity=".18" transform="translate(0 3)"/>
+  <path d="M64 7 111 25v33c0 28-18 49-47 62C35 107 17 86 17 58V25L64 7Z" fill="url(#blue-ombre)" stroke="#1d4ed8" stroke-width="2"/>
+  <path d="M64 13 105 29v28c0 23-14 41-41 54-27-13-41-31-41-54V29l41-16Z" fill="url(#shine)"/>
+  <path d="M64 7 111 25v33c0 28-18 49-47 62C35 107 17 86 17 58V25L64 7Z" fill="none" stroke="#fff" stroke-opacity=".78" stroke-width="3"/>
+  <text x="64" y="76" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="39" font-weight="800" letter-spacing="-3" text-anchor="middle">RF</text>
+</svg>

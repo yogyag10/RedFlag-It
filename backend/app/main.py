@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .anomaly import is_density_outlier
-from .risk import RiskResult, add_signal, analyze_text, classify, summarize
+from .risk import RiskResult, add_signal, analyze_text, classify, summarize, vote_summary
 from .schemas import (
     Baseline,
     FurnishFinderResult,
@@ -124,6 +124,7 @@ async def analyze_listing(listing: ListingRequest):
         })
         room_risk = analyze_text(room_listing)
         room_results.append(RoomAnalysis(
+            **vote_summary(room_risk),
             name=room.name,
             risk_score=room_risk.score,
             risk_level=classify(room_risk.score),
@@ -253,12 +254,14 @@ async def analyze_listing(listing: ListingRequest):
         ),
     )
     return ListingAnalysis(
+        **vote_summary(result),
         risk_score=result.score,
         risk_level=level,
         summary=summary,
         signals=result.signals,
         baseline=baseline,
         vision_status=vision.status,
+        photo_urls_received=len(image_urls),
         photos_processed=len(vision.images),
         photo_text_match_available=vision.text_image_similarity is not None,
         price_comparison_available=price_comparison_available,

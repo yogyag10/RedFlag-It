@@ -71,8 +71,19 @@
     const facts = [];
     const joined = text.match(/\bJoined Facebook in (\d{4})\b/i);
     if (joined) facts.push(`Public profile page shows it joined Facebook in ${joined[1]}.`);
-    const reviewLine = text.split(/\n+/).map(clean).find((line) => /(?:★{1,5}|\d+(?:\.\d+)?\s*stars?)/i.test(line) && /\(\d+\)/.test(line));
-    if (reviewLine) facts.push(`Public profile page displays this review summary: ${reviewLine.slice(0, 100)}.`);
+    const lines = String(text || "").split(/\n+/).map(clean).filter(Boolean);
+    const reviewCountPattern = /\(\s*\d+\s*(?:reviews?|ratings?)?\s*\)|\b\d+\s+(?:public\s+)?(?:reviews?|ratings?)\b/i;
+    for (let index = 0; index < lines.length; index += 1) {
+      const context = lines.slice(Math.max(0, index - 1), Math.min(lines.length, index + 2)).join(" · ");
+      if (!reviewCountPattern.test(context) || !/review|rating|seller|[★⭐]/i.test(context)) continue;
+      const explicitRating = context.match(/(?<![\d.])([0-5](?:\.\d+)?)\s*(?:\/\s*5|out\s+of\s+5|stars?|[★⭐])/i);
+      const ratingContext = /\b(?:seller\s+)?ratings?\b/i.test(context) || /\breviews?\b/i.test(context);
+      const plainDecimal = ratingContext ? context.match(/(?<![\d.])([0-5]\.\d+)(?![\d.])/) : null;
+      const starRating = context.match(/([★☆⭐]{1,5})/);
+      if (!explicitRating && !plainDecimal && !starRating) continue;
+      facts.push(`Public seller review summary: ${context.slice(0, 150)}.`);
+      break;
+    }
     return facts;
   }
 
@@ -231,11 +242,23 @@
             return propertyImages.length ? propertyImages : images.filter((img) => /property photo/i.test(img.alt || ""));
           })()
         : [...new Set([
-          ...listingRoot?.querySelectorAll('button[aria-label*="photo" i] img, [role="button"][aria-label*="photo" i] img') || [],
-          ...listingRoot?.querySelectorAll("img") || []
+          ...listingRoot?.querySelectorAll('button[aria-label*="photo" i] img, [role="button"][aria-label*="photo" i] img, img') || [],
+          ...document.querySelector('[role="main"]')?.querySelectorAll('button[aria-label*="photo" i] img, [role="button"][aria-label*="photo" i] img, img') || []
         ])];
     const imageUrls = [...new Set(pageImages
       .filter((img) => img.naturalWidth >= 220 && img.naturalHeight >= 140)
+      .filter((img) => {
+        if (!/facebook/i.test(location.hostname)) return true;
+        const rect = img.getBoundingClientRect();
+        const src = img.currentSrc || img.src;
+        try {
+          const host = new URL(src).hostname;
+          return rect.width >= 140 && rect.height >= 110
+            && /(?:^|\.)(?:fbcdn\.net|fbsbx\.com|facebook\.com)$/i.test(host);
+        } catch (_) {
+          return false;
+        }
+      })
       .filter((img) => !/profile|avatar|seller|emoji|map/i.test(img.alt || ""))
       .map((img) => img.currentSrc || img.src)
       .filter((src) => /^https?:/i.test(src)))]
@@ -310,7 +333,7 @@
       image_urls: imageUrls,
       source_url: location.href,
       rooms,
-      profile_facts: craigslist ? [] : profileFacts(mainText),
+      profile_facts: craigslist ? [] : profileFacts(`${listingRoot?.innerText || ""}\n${mainText}`),
       listing_age: lines.find((line) => /^listed\s+/i.test(line))?.slice(0, 100) || null,
       availability_text: (bodyText.match(/\bavailable\b.{0,160}/i) || [])[0] || null
     };
@@ -398,16 +421,16 @@
     };
   }
 
-  function addCardBadge(card, initialText = "RedFlag · checking") {
+  function addCardBadge(card, initialText = "🛡️ Checking…") {
     if (!document.getElementById("redflag-card-styles")) {
       const style = document.createElement("style");
       style.id = "redflag-card-styles";
       style.textContent = `
-        .redflag-card-badge { position:absolute; z-index:2147483000; top:8px; right:8px; max-width:calc(100% - 16px); padding:6px 9px; border:1px solid #4b505a; border-radius:999px; background:#171a20ed; color:#f2f3f5; box-shadow:0 5px 18px #0006; font:700 11px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; letter-spacing:.015em; white-space:normal; pointer-events:none; }
-        .redflag-card-badge[data-status="low"] { border-color:#54c887; color:#72dda0; }
-        .redflag-card-badge[data-status="careful"] { border-color:#f1a64b; color:#ffc16e; }
-        .redflag-card-badge[data-status="possible"] { border-color:#ef6868; color:#ff8787; }
-        .redflag-card-badge[data-status="unavailable"] { color:#b4b7c0; }
+        .redflag-card-badge { position:absolute; z-index:2147483000; top:8px; right:8px; max-width:calc(100% - 16px); padding:7px 10px; border:2px solid #cbd5e1; border-radius:999px; background:#fff; color:#12213a; box-shadow:0 5px 18px #0f172a33; font:800 12px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; letter-spacing:.015em; white-space:normal; pointer-events:none; }
+        .redflag-card-badge[data-status="low"] { border-color:#86efac; background:#f0fdf4; color:#166534; }
+        .redflag-card-badge[data-status="careful"] { border-color:#fcd34d; background:#fffbeb; color:#854d0e; }
+        .redflag-card-badge[data-status="possible"] { border-color:#fca5a5; background:#fef2f2; color:#991b1b; }
+        .redflag-card-badge[data-status="unavailable"] { border-color:#cbd5e1; background:#f8fafc; color:#475569; }
       `;
       (document.head || document.documentElement).append(style);
     }
@@ -425,9 +448,113 @@
   function setBadge(badge, result) {
     const score = Math.max(0, Math.min(100, Math.round(Number(result.risk_score) || 0)));
     const status = score >= 60 ? "possible" : score >= 30 ? "careful" : "low";
+    const label = status === "possible" ? "Scam Possible" : status === "careful" ? "Be Careful" : "Low Risk";
     badge.dataset.status = status;
-    badge.textContent = score === 0 ? "0/100 · No warning text" : `${score}/100 · ${result.risk_level}`;
+    badge.textContent = `${score >= 60 ? "🚩" : score >= 30 ? "⚠️" : "🛡️"} ${score}/100 · ${label}`;
     badge.title = "Quick scan of the visible card text only. Open the listing for its full check. This is not a probability.";
+  }
+
+  function shieldLogo(id, className) {
+    return `<svg class="${className}" viewBox="0 0 128 128" role="img" aria-label="RedFlag shield"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7dd3fc"/><stop offset=".48" stop-color="#3b82f6"/><stop offset="1" stop-color="#1e40af"/></linearGradient></defs><path d="M64 7 111 25v33c0 28-18 49-47 62C35 107 17 86 17 58V25L64 7Z" fill="url(#${id})" stroke="#fff" stroke-opacity=".8" stroke-width="3"/><text x="64" y="76" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="39" font-weight="800" letter-spacing="-3" text-anchor="middle">RF</text></svg>`;
+  }
+
+  function renderRecentHistory(shadow) {
+    const host = shadow?.querySelector(".history-list");
+    if (!host) return;
+    const heading = shadow.querySelector(".recent-history summary");
+    host.replaceChildren();
+    chrome.storage.local.get("recentChecks").then(({ recentChecks = [] }) => {
+      if (!host.isConnected) return;
+      const checks = (Array.isArray(recentChecks) ? recentChecks : [])
+        .filter((check) => !isPlaceholderTitle(check?.title || check?.listing?.title))
+        .filter((check) => !isLegacySearchEntry(check))
+        .slice(0, 5);
+      if (heading) heading.textContent = `🕘 Recent listings (${checks.length})`;
+      if (!checks.length) {
+        const empty = document.createElement("p");
+        empty.className = "history-empty";
+        empty.textContent = "Checked listings will appear here.";
+        host.append(empty);
+        return;
+      }
+      const labels = {
+        payment_before_viewing: "Money before viewing",
+        wire_or_irreversible_payment: "Hard-to-reverse payment",
+        landlord_unavailable: "Renter hard to reach",
+        verification_code: "Account-code request",
+        pressure_tactic: "Urgent pressure",
+        review_checker: "Public seller reviews",
+      };
+      checks.forEach((check) => {
+        const analysis = check.overall || check.analysis || {};
+        const score = Math.max(0, Math.min(100, Math.round(Number(analysis.risk_score) || 0)));
+        const status = score >= 60 ? "possible" : score >= 30 ? "careful" : "low";
+        const statusLabel = status === "possible" ? "Scam Possible" : status === "careful" ? "Be Careful" : "Low Risk";
+        const entry = document.createElement("details");
+        entry.className = "history-entry";
+        const summary = document.createElement("summary");
+        const title = document.createElement("span");
+        title.className = "history-title";
+        title.textContent = clean(check.title || check.listing?.title || "Rental listing");
+        const scoreNode = document.createElement("span");
+        scoreNode.className = "history-score";
+        scoreNode.dataset.status = status;
+        scoreNode.textContent = `${score}/100 · ${statusLabel}`;
+        summary.append(title, scoreNode);
+        entry.append(summary);
+        const date = document.createElement("time");
+        date.className = "history-date";
+        const checkedAt = Number(check.checked_at);
+        if (Number.isFinite(checkedAt) && checkedAt > 0) {
+          date.dateTime = new Date(checkedAt).toISOString();
+          date.textContent = new Date(checkedAt).toLocaleString();
+        } else {
+          date.textContent = "Earlier check";
+        }
+        entry.append(date);
+        const treeList = document.createElement("ul");
+        treeList.className = "history-factors";
+        const signals = new Map((analysis.signals || []).map((signal) => [signal.code, signal]));
+        (Array.isArray(analysis.trees) ? analysis.trees : []).forEach((tree) => {
+          const [voteText = "", code = "", ...ruleParts] = String(tree).split("|").map((part) => part.trim());
+          const reviewUnavailable = code === "review_checker" && !analysis.review_check_available;
+          const result = reviewUnavailable || voteText.toLowerCase() === "unknown"
+            ? "unknown"
+            : voteText.toLowerCase() === "fake" ? "flag" : "clear";
+          const row = document.createElement("li");
+          row.dataset.result = result;
+          const icon = document.createElement("span");
+          icon.setAttribute("aria-hidden", "true");
+          icon.textContent = result === "flag" ? "⚠️" : result === "unknown" ? "ⓘ" : "✓";
+          const copy = document.createElement("span");
+          const name = document.createElement("strong");
+          name.textContent = labels[code] || code || "Safety check";
+          const note = document.createElement("small");
+          const signalCode = code === "review_checker" ? "low_public_review_rating" : code;
+          const signal = signals.get(signalCode);
+          note.textContent = [ruleParts.join(" | "), signal?.detail, signal?.evidence ? `Listing text: “${signal.evidence}”` : ""]
+            .filter(Boolean).join(". ")
+            || (result === "unknown" ? "Not enough public information" : result === "flag" ? "Warning found" : "No warning found");
+          copy.append(name, note);
+          row.append(icon, copy);
+          treeList.append(row);
+        });
+        if (treeList.childElementCount) entry.append(treeList);
+        else {
+          const unavailable = document.createElement("p");
+          unavailable.className = "history-empty";
+          unavailable.textContent = "Detailed checks are unavailable for this saved result.";
+          entry.append(unavailable);
+        }
+        host.append(entry);
+      });
+    }).catch(() => {
+      if (!host.isConnected) return;
+      const empty = document.createElement("p");
+      empty.className = "history-empty";
+      empty.textContent = "Recent checks are unavailable.";
+      host.append(empty);
+    });
   }
 
   function mountDetailOverlay() {
@@ -435,55 +562,106 @@
     overlayHost = document.createElement("div");
     overlayHost.id = "redflag-detail-host";
     const shadow = overlayHost.attachShadow({ mode: "open" });
+    const launcherLogo = shieldLogo("redflagLauncherLogo", "launcher-mark");
+    const panelLogo = shieldLogo("redflagPanelLogo", "brand");
     shadow.innerHTML = `
       <style>
         :host { all: initial; }
         * { box-sizing: border-box; }
-        .launcher { position: fixed; z-index: 2147483646; right: 18px; bottom: 18px; display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 36px); padding: 10px 14px; border: 1px solid #464b56; border-radius: 999px; background: #171a20; color: #f4f4f5; box-shadow: 0 10px 32px #0008; font: 700 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; cursor: pointer; transition: transform .16s ease, border-color .16s ease; }
+        .launcher { position: fixed; z-index: 2147483646; right: 18px; bottom: 18px; display: flex; align-items: center; gap: 9px; max-width: calc(100vw - 36px); min-height: 52px; padding: 10px 17px; border: 2px solid #b8c4d1; border-radius: 999px; background: #fff; color: #111827; box-shadow: 0 8px 28px #0005; font: 800 16px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; cursor: pointer; transition: transform .16s ease, border-color .16s ease; }
         .launcher:hover { transform: translateY(-2px); border-color: #747985; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; background: #b6bac4; }
-        .launcher[data-status="low"] .dot { background: #54c887; }
-        .launcher[data-status="careful"] .dot { background: #f1a64b; }
-        .launcher[data-status="possible"] .dot { background: #ef6868; }
-        .panel { position: fixed; z-index: 2147483647; right: 18px; bottom: 68px; width: min(360px, calc(100vw - 36px)); max-height: min(72vh, 620px); overflow: auto; padding: 17px; border: 1px solid #3e434d; border-radius: 20px; background: #15181e; color: #f4f4f5; box-shadow: 0 20px 56px #000a; font: 14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+        .launcher-mark { display:block; flex:0 0 auto; width:34px; height:34px; }
+        .status-icon { display:grid; place-items:center; width:26px; height:26px; border-radius:50%; background:#e5e7eb; font-size:17px; }
+        .launcher[data-status="low"] .status-icon { background:#d1fae5; color:#065f46; }
+        .launcher[data-status="careful"] .status-icon { background:#fef3c7; color:#854d0e; }
+        .launcher[data-status="possible"] .status-icon { background:#fee2e2; color:#991b1b; }
+        .panel { position: fixed; z-index: 2147483647; right: 18px; bottom: 80px; width: min(410px, calc(100vw - 36px)); max-height: min(78vh, 720px); overflow: auto; padding: 18px; border: 2px solid #cbd5e1; border-radius: 20px; background: #fff; color: #111827; box-shadow: 0 20px 56px #0009; font: 16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
         .hidden { display: none; }
         .header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
-        .brand { display:grid; place-items:center; width:30px; height:30px; border:1px solid #464b56; border-radius:10px; background:#242830; font-weight:800; }
-        .heading { flex:1; font-size:14px; font-weight:750; }
-        .close { width:30px; height:30px; border:1px solid #3e434d; border-radius:9px; background:#20232a; color:#bbbfc8; font-size:18px; cursor:pointer; }
-        .score-card { padding:14px; border:1px solid #353a44; border-radius:15px; background:#1b1f26; }
-        .score-card[data-status="unavailable"] .score, .score-card[data-status="unavailable"] .label { color:#b4b7c0; }
-        .risk-line { display:flex; align-items:center; flex-wrap:wrap; gap:9px; }
-        .score { font-size:30px; font-weight:800; letter-spacing:-.05em; font-variant-numeric:tabular-nums; }
-        .label { padding:4px 8px; border:1px solid currentColor; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:.035em; }
-        [data-status="low"] .score, [data-status="low"] .label { color:#54c887; }
-        [data-status="careful"] .score, [data-status="careful"] .label { color:#f1a64b; }
-        [data-status="possible"] .score, [data-status="possible"] .label { color:#ef6868; }
-        .summary { display:none; margin:6px 0 0; color:#b4b7c0; font-size:12px; }
-        .score-card[data-status="pending"] .summary, .score-card[data-status="unavailable"] .summary { display:block; }
-        .toggle { margin-top:12px; padding:0; border:0; background:none; color:#eee; font:inherit; font-size:12px; font-weight:700; line-height:1.4; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
-        .retry { display:block; width:100%; margin-top:12px; padding:10px 12px; border:1px solid #3e434d; border-radius:11px; background:#252932; color:#f4f4f5; font:700 13px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; cursor:pointer; }
-        .retry:hover { border-color:#747985; background:#303540; }
-        .details { margin-top:13px; padding-top:12px; border-top:1px solid #343842; }
-        .details h3 { margin:13px 0 6px; font-size:13px; }
+        .brand { display:block; flex:0 0 auto; width:44px; height:44px; filter:drop-shadow(0 3px 6px #1d4ed833); }
+        .heading { flex:1; font-size:18px; font-weight:800; }
+        .close { width:44px; height:44px; border:2px solid #cbd5e1; border-radius:12px; background:#f8fafc; color:#111827; font-size:24px; cursor:pointer; }
+        .score-card { padding:15px; border:2px solid #cbd5e1; border-radius:16px; background:#f8fafc; }
+        .score-card[data-status="unavailable"] .score, .score-card[data-status="unavailable"] .label { color:#334155; }
+        .risk-line { display:flex; align-items:center; gap:12px; }
+        .score-icon { display:grid; place-items:center; flex:0 0 48px; width:48px; height:48px; border-radius:50%; background:#e2e8f0; font-size:27px; }
+        .score-copy { display:grid; gap:1px; flex:1; }
+        .eyebrow { color:#475569; font-size:12px; font-weight:800; letter-spacing:.06em; }
+        .score { font-size:34px; font-weight:850; letter-spacing:-.04em; font-variant-numeric:tabular-nums; }
+        .label { max-width:128px; padding:7px 9px; border:2px solid currentColor; border-radius:12px; font-size:13px; font-weight:850; line-height:1.2; text-align:center; }
+        [data-status="low"] .score, [data-status="low"] .label { color:#166534; }
+        [data-status="careful"] .score, [data-status="careful"] .label { color:#92400e; }
+        [data-status="possible"] .score, [data-status="possible"] .label { color:#991b1b; }
+        [data-status="low"] .score-icon { background:#dcfce7; color:#166534; }
+        [data-status="careful"] .score-icon { background:#fef3c7; color:#92400e; }
+        [data-status="possible"] .score-icon { background:#fee2e2; color:#991b1b; }
+        .summary { margin:12px 0 0; color:#1f2937; font-size:16px; font-weight:650; }
+        .quick-facts { display:grid; grid-template-columns:1fr; gap:8px; margin-top:12px; }
+        .quick-fact { min-height:78px; padding:9px 7px; border:1px solid #cbd5e1; border-radius:12px; background:#fff; color:#1f2937; text-align:center; }
+        .quick-icon { display:block; margin-bottom:3px; font-size:22px; }
+        .quick-label { display:block; font-size:13px; font-weight:750; line-height:1.2; }
+        .toggle { width:100%; min-height:48px; margin-top:12px; padding:10px 12px; border:2px solid #1d4ed8; border-radius:12px; background:linear-gradient(115deg,#eff6ff,#dbeafe); color:#1e3a8a; font:800 16px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; cursor:pointer; }
+        .retry { display:block; width:100%; min-height:48px; margin-top:12px; padding:10px 12px; border:2px solid #2563eb; border-radius:12px; background:linear-gradient(110deg,#2563eb,#38bdf8); color:#fff; font:800 16px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; cursor:pointer; }
+        .retry:hover { border-color:#1d4ed8; background:linear-gradient(110deg,#1d4ed8,#0ea5e9); }
+        .panel.zero-score .retry, .panel.zero-score .eyebrow, .panel.zero-score .summary, .panel.zero-score .quick-facts { display:none; }
+        .panel.zero-score .score-card { padding:12px 14px; }
+        .panel.zero-score .risk-line { min-height:56px; }
+        .panel.zero-score .header { margin-bottom:12px; }
+        .panel.zero-score .toggle { margin-top:12px; }
+        .launcher:focus-visible, .toggle:focus-visible, .close:focus-visible, .retry:focus-visible { outline:3px solid #1d4ed8; outline-offset:3px; }
+        .details { margin-top:13px; padding-top:12px; border-top:2px solid #e2e8f0; }
+        .details h3 { margin:14px 0 8px; font-size:17px; }
         .details h3:first-child { margin-top:0; }
-        .details p, .details li { color:#b4b7c0; font-size:12px; }
-        .details ul { display:grid; gap:9px; margin:0; padding-left:17px; }
-        .evidence { display:block; margin-top:4px; color:#e2e3e7; }
-        .note { display:none; margin:13px 0 0; color:#858a95; font-size:11px; }
+        .details p, .details li { color:#334155; font-size:15px; }
+        .factor-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+        .factor { display:grid; grid-template-columns:34px 1fr auto; align-items:center; gap:9px; min-height:52px; padding:8px; border:1px solid #cbd5e1; border-radius:12px; background:#fff; }
+        .factor-icon { display:grid; place-items:center; width:32px; height:32px; border-radius:50%; background:#dbeafe; font-size:18px; }
+        .factor[data-result="flag"] { border-color:#fca5a5; background:#fff7f7; }
+        .factor[data-result="flag"] .factor-icon { background:#fee2e2; }
+        .factor[data-result="clear"] { border-color:#86efac; background:#f0fdf4; }
+        .factor[data-result="clear"] .factor-icon { background:#dcfce7; }
+        .factor[data-result="unknown"] { border-color:#cbd5e1; background:#f8fafc; }
+        .factor-name { font-size:15px; font-weight:750; }
+        .factor-result { font-size:13px; font-weight:800; }
+        .factor[data-result="flag"] .factor-result { color:#991b1b; }
+        .factor[data-result="clear"] .factor-result { color:#166534; }
+        .factor[data-result="unknown"] .factor-result { color:#475569; }
+        .factor-note { grid-column:2 / 4; margin:0 !important; padding:0 2px 4px; color:#334155 !important; font-size:14px !important; }
+        .note { display:none; margin:13px 0 0; color:#334155; font-size:14px; }
         .details .note { display:block; }
+        .recent-history { margin-top:14px; padding-top:10px; border-top:2px solid #e2e8f0; }
+        .recent-history > summary { min-height:40px; padding:5px 2px; color:#1e3a8a; font-size:15px; font-weight:800; cursor:pointer; }
+        .history-list { display:grid; gap:8px; }
+        .history-entry { padding:9px; border:1px solid #cbd5e1; border-radius:12px; background:#fff; }
+        .history-entry > summary { display:grid; gap:5px; cursor:pointer; list-style-position:inside; }
+        .history-title { color:#111827; font-size:14px; font-weight:800; overflow-wrap:anywhere; }
+        .history-score { width:max-content; padding:3px 7px; border:1px solid currentColor; border-radius:999px; font-size:12px; font-weight:800; }
+        .history-score[data-status="low"] { color:#166534; background:#f0fdf4; }
+        .history-score[data-status="careful"] { color:#92400e; background:#fffbeb; }
+        .history-score[data-status="possible"] { color:#991b1b; background:#fef2f2; }
+        .history-date { display:block; margin:6px 0; color:#64748b; font-size:12px; }
+        .history-factors { display:grid; gap:5px; margin:6px 0 0; padding:0; list-style:none; }
+        .history-factors li { display:grid; grid-template-columns:24px 1fr; gap:6px; padding:7px; border:1px solid #cbd5e1; border-radius:9px; background:#f8fafc; }
+        .history-factors li[data-result="flag"] { border-color:#fca5a5; background:#fff7f7; }
+        .history-factors li[data-result="clear"] { border-color:#86efac; background:#f0fdf4; }
+        .history-factors li[data-result="unknown"] { border-color:#cbd5e1; background:#f8fafc; }
+        .history-factors li > span:first-child { font-size:18px; }
+        .history-factors strong, .history-factors small { display:block; }
+        .history-factors small { margin-top:2px; color:#475569; font-size:12px; line-height:1.35; overflow-wrap:anywhere; }
+        .history-empty { margin:4px 0; color:#475569; font-size:14px; }
         @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration:.01ms !important; } }
       </style>
-      <button class="launcher" type="button" aria-expanded="false"><span class="dot"></span><span>RedFlag · Checking listing…</span></button>
+      <button class="launcher" type="button" aria-expanded="false">${launcherLogo}<span class="status-icon" aria-hidden="true">…</span><span>Checking rental…</span></button>
       <section class="panel hidden" aria-label="RedFlag listing check">
-        <div class="header"><span class="brand">R</span><span class="heading">RedFlag · Listing check</span><button class="close" type="button" aria-label="Close">×</button></div>
-        <div class="score-card" data-status="pending"><div class="risk-line"><strong class="score">—</strong><span class="label">CHECKING</span></div><p class="summary">Checking this listing with your configured service.</p></div>
-        <button class="toggle hidden" type="button" aria-expanded="false">See details</button>
-        <button class="retry hidden" type="button">Try again</button>
+        <div class="header">${panelLogo}<span class="heading">RedFlag</span><button class="close" type="button" aria-label="Close">×</button></div>
+        <div class="score-card" data-status="pending"><div class="risk-line"><span class="score-icon" aria-hidden="true">…</span><span class="score-copy"><span class="eyebrow">CHECK RESULT</span><strong class="score">—</strong></span><span class="label">CHECKING</span></div><p class="summary">Checking this rental…</p><div class="quick-facts"></div></div>
+        <button class="toggle hidden" type="button" aria-expanded="false">📋 See safety details</button>
+        <button class="retry hidden" type="button">↻ Re-check Listing</button>
         <div class="details hidden"></div>
-        <p class="note">A screening aid, not proof of fraud. Verify the unit and who can rent it.</p>
+        <details class="recent-history"><summary>🕘 Recent listings</summary><div class="history-list"></div></details>
       </section>`;
     document.documentElement.append(overlayHost);
+    renderRecentHistory(shadow);
     const launcher = shadow.querySelector(".launcher");
     const panel = shadow.querySelector(".panel");
     const close = shadow.querySelector(".close");
@@ -502,7 +680,7 @@
       const details = shadow.querySelector(".details");
       const opening = details.classList.contains("hidden");
       details.classList.toggle("hidden", !opening);
-      toggle.textContent = opening ? "See less" : "See details";
+      toggle.textContent = opening ? "▲ Hide details" : "🔎 See details";
       toggle.setAttribute("aria-expanded", String(opening));
     });
     retry.addEventListener("click", () => {
@@ -512,14 +690,53 @@
     return { shadow, launcher, panel };
   }
 
-  function renderDetailResult(overlay, listing, analysis) {
+  function renderDetailResult(overlay, analysis) {
     const score = Math.max(0, Math.min(100, Math.round(Number(analysis.risk_score) || 0)));
     const status = score >= 60 ? "possible" : score >= 30 ? "careful" : "low";
+    const fakeVotes = Number(analysis.votes?.fake) || 0;
+    const realVotes = Number(analysis.votes?.real) || 0;
+    const unknownVotes = Number(analysis.votes?.unknown) || 0;
+    const noFlags = score === 0 && fakeVotes === 0 && unknownVotes === 0;
+    const panel = overlay.shadow.querySelector(".panel");
+    panel.classList.toggle("zero-score", score === 0);
     const card = overlay.shadow.querySelector(".score-card");
     card.dataset.status = status;
     overlay.shadow.querySelector(".score").textContent = `${score} / 100`;
-    overlay.shadow.querySelector(".label").textContent = analysis.risk_level;
-    overlay.shadow.querySelector(".summary").textContent = analysis.summary || "Listing check complete.";
+    const label = status === "possible" ? "Scam Possible" : status === "careful" ? "Be Careful" : "Low Risk";
+    overlay.shadow.querySelector(".label").textContent = label;
+    overlay.shadow.querySelector(".score-icon").textContent = noFlags ? "✅" : status === "possible" ? "⚠️" : status === "careful" ? "🔎" : "⚠️";
+    overlay.shadow.querySelector(".summary").textContent = noFlags
+      ? "No warning flags found."
+      : fakeVotes ? `${fakeVotes} of 6 checks found warning signs.`
+        : unknownVotes ? "No warning flags found; seller review data is unavailable."
+          : "Review the checks below.";
+    const launcherIcon = overlay.launcher.querySelector(".status-icon");
+    launcherIcon.textContent = noFlags ? "✅" : unknownVotes && !fakeVotes ? "ⓘ" : status === "possible" ? "⚠️" : status === "careful" ? "🔎" : "⚠️";
+
+    const treeRows = (Array.isArray(analysis.trees) ? analysis.trees : []).map((entry) => {
+      const [voteText = "", code = "", ...ruleParts] = String(entry).split("|").map((part) => part.trim());
+      return { vote: voteText.toLowerCase(), code, rule: ruleParts.join(" | ") };
+    });
+    const quickFacts = overlay.shadow.querySelector(".quick-facts");
+    quickFacts.replaceChildren();
+    const addQuickFact = (icon, title, labelText, ariaLabel) => {
+      const fact = document.createElement("div");
+      fact.className = "quick-fact";
+      fact.setAttribute("role", "group");
+      fact.title = title;
+      fact.setAttribute("aria-label", ariaLabel || labelText);
+      const glyph = document.createElement("span");
+      glyph.className = "quick-icon";
+      glyph.setAttribute("aria-hidden", "true");
+      glyph.textContent = icon;
+      const labelNode = document.createElement("span");
+      labelNode.className = "quick-label";
+      labelNode.textContent = labelText;
+      fact.append(glyph, labelNode);
+      quickFacts.append(fact);
+    };
+    addQuickFact("🚩", "Check results", `Warning ${fakeVotes} · Clear ${realVotes} · Unknown ${unknownVotes}`, `${fakeVotes} warning checks, ${realVotes} clear checks, ${unknownVotes} unknown checks`);
+
     const details = overlay.shadow.querySelector(".details");
     details.replaceChildren();
     const addText = (tag, text, parent = details) => {
@@ -528,50 +745,58 @@
       parent.append(element);
       return element;
     };
-    addText("h3", "Why this score");
-    if (analysis.summary) addText("p", analysis.summary);
-    if (analysis.signals?.length) {
-      const list = document.createElement("ul");
-      analysis.signals.forEach((signal) => {
-        const item = document.createElement("li");
-        const strong = document.createElement("strong");
-        strong.textContent = signal.title;
-        item.append(strong);
-        if (signal.detail) addText("p", signal.detail, item);
-        if (signal.evidence) addText("span", `Evidence from ${signal.evidence_source || "listing"}: “${signal.evidence}”`, item).className = "evidence";
-        list.append(item);
-      });
-      details.append(list);
-    } else {
-      addText("p", "No specific warning signs were found in the details RedFlag could read.");
-    }
-    if (analysis.room_results?.length > 1) {
-      addText("p", `This page describes ${analysis.room_results.length} room options. See the room breakdown in the RedFlag extension popup.`);
-    }
-    addText("h3", "Listing details · unverified");
-    const facts = [
-      listing.price == null ? "Asking price was not visible on the page." : `Asking price shown: ${listing.currency || "CAD"} ${listing.price}${listing.price_period ? ` / ${listing.price_period}` : ""}.`,
-      listing.bedrooms == null ? "Bedroom count was not visible on the page." : `Bedrooms shown: ${listing.bedrooms}.`,
-      listing.bathrooms == null ? "Bathroom count was not visible on the page." : `Bathrooms shown: ${listing.bathrooms}.`,
-      listing.location_text ? `Location shown: ${listing.location_text}.` : "A location was not visible on the page.",
-    ];
-    facts.forEach((fact) => addText("p", fact));
-    addText("p", analysis.price_comparison_available
-      ? `Price and location compared with ${analysis.baseline?.peer_count || 0} nearby listings in RedFlag’s local history.`
-      : analysis.baseline?.message || "No nearby price comparison was available.");
-    addText("h3", "Furnish Finder");
-    addText("p", analysis.furnish_finder?.summary || "Photo furnishing estimate unavailable.");
-    if (analysis.furnish_finder?.likely_visible_items?.length) addText("p", `Likely visible: ${analysis.furnish_finder.likely_visible_items.join(", ")}.`);
-    addText("p", analysis.photos_processed
-      ? `${analysis.photos_processed} listing photo${analysis.photos_processed === 1 ? "" : "s"} processed.`
-      : "No listing photos could be processed.");
-    addText("p", "Profile history, ownership, and rental authority have not been independently verified.");
-    addText("p", `Listing checked: ${listing.title || "Rental listing"}.`);
-    addText("p", "This score is a screening aid, not a probability or proof of fraud. Verify the unit and who can rent it.").className = "note";
+    addText("h3", "🚦 6 safety factors");
+    const factorNames = {
+      payment_before_viewing: ["💵", "Pay before viewing"],
+      wire_or_irreversible_payment: ["💳", "Hard-to-reverse payment"],
+      landlord_unavailable: ["👤", "Renter hard to reach"],
+      verification_code: ["🔐", "Account-code request"],
+      pressure_tactic: ["⏱️", "Urgent pressure"],
+      review_checker: ["⭐", "Public seller reviews"],
+    };
+    const signalByCode = new Map((analysis.signals || []).map((signal) => [signal.code, signal]));
+    const factorList = document.createElement("ul");
+    factorList.className = "factor-list";
+    treeRows.forEach((row) => {
+      const reviewUnavailable = row.code === "review_checker" && !analysis.review_check_available;
+      const result = reviewUnavailable || row.vote === "unknown" ? "unknown" : row.vote === "fake" ? "flag" : "clear";
+      const [icon, title] = factorNames[row.code] || ["ℹ️", row.code || "Rental check"];
+      const item = document.createElement("li");
+      item.className = "factor";
+      item.dataset.result = result;
+      const glyph = document.createElement("span");
+      glyph.className = "factor-icon";
+      glyph.setAttribute("aria-hidden", "true");
+      glyph.textContent = icon;
+      const name = addText("span", title, item);
+      name.className = "factor-name";
+      const outcome = addText("span", result === "flag" ? "CHECK" : result === "unknown" ? "UNKNOWN" : "CLEAR", item);
+      outcome.className = "factor-result";
+      item.prepend(glyph);
+      const signalCode = row.code === "review_checker" ? "low_public_review_rating" : row.code;
+      const signal = signalByCode.get(signalCode);
+      const noteParts = [];
+      if (row.rule) noteParts.push(row.rule);
+      if (signal?.detail) noteParts.push(signal.detail);
+      if (signal?.evidence) noteParts.push(`Listing text: “${signal.evidence}”`);
+      if (row.code === "review_checker") noteParts.push(analysis.review_check_available
+        ? "Visible seller rating checked; written review text and rental history are not checked."
+        : "Seller review data was not visible or had too few ratings to assess; written review text and rental history are not checked.");
+      const note = [...new Set(noteParts)].join(". ");
+      if (note) {
+        const noteNode = addText("p", note, item);
+        noteNode.className = "factor-note";
+      }
+      factorList.append(item);
+    });
+    details.append(factorList);
     const toggle = overlay.shadow.querySelector(".toggle");
     toggle.classList.remove("hidden");
+    toggle.textContent = "🔎 See details";
+    toggle.setAttribute("aria-expanded", "false");
+    overlay.shadow.querySelector(".retry").classList.toggle("hidden", score === 0);
     overlay.launcher.dataset.status = status;
-    overlay.launcher.querySelector("span:last-child").textContent = `RedFlag · ${score}/100 ${analysis.risk_level}`;
+    overlay.launcher.querySelector("span:last-child").textContent = `${label} · ${score}/100`;
   }
 
   function renderDetailError(error) {
@@ -587,6 +812,7 @@
     overlay.shadow.querySelector(".details").classList.add("hidden");
     overlay.shadow.querySelector(".retry").classList.remove("hidden");
     overlay.launcher.dataset.status = "unavailable";
+    overlay.launcher.querySelector(".status-icon").textContent = "❌";
     overlay.launcher.querySelector("span:last-child").textContent = "RedFlag · check failed";
     overlay.shadow.querySelector(".panel").classList.remove("hidden");
     overlay.launcher.setAttribute("aria-expanded", "true");
@@ -608,8 +834,21 @@
     if (!listing) throw lastError || new Error("Listing details did not load.");
     const response = await chrome.runtime.sendMessage({ type: "REDFLAG_FULL_ANALYSIS", listing });
     if (!response?.ok) throw new Error(response?.error || "Could not reach the analysis service.");
-    renderDetailResult(overlay, listing, response.result);
-    await saveRecentCheck(listing, response.result);
+    const analysis = response.result;
+    if (typeof analysis?.fake !== "boolean"
+      || !Number.isInteger(analysis?.votes?.fake)
+      || !Number.isInteger(analysis?.votes?.real)
+      || !Number.isInteger(analysis?.votes?.unknown)
+      || analysis.votes.fake + analysis.votes.real + analysis.votes.unknown !== 6
+      || analysis.fake !== (analysis.votes.fake > analysis.votes.real)
+      || typeof analysis.review_check_available !== "boolean"
+      || !Array.isArray(analysis?.trees)
+      || analysis.trees.length !== 6
+      || !analysis.trees.every((tree) => typeof tree === "string" && /^(?:fake|real|unknown)\s*\|\s*[a-z0-9_]+\s*\|\s*\S/i.test(tree))) {
+      throw new Error("The backend replied, but its result format is outdated. Restart the updated backend and try again.");
+    }
+    renderDetailResult(overlay, analysis);
+    await saveRecentCheck(listing, analysis);
   }
 
   function listingIdentity(listing) {
@@ -660,6 +899,7 @@
       overall
     });
     await chrome.storage.local.set({ recentChecks: recentChecks.slice(0, 5) });
+    renderRecentHistory(overlayHost?.shadowRoot);
   }
 
   async function scanSearchCards() {
@@ -716,6 +956,12 @@
       checkOpenedListing().catch(renderDetailError);
     }
   }
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local" && changes.recentChecks && overlayHost?.isConnected) {
+      renderRecentHistory(overlayHost.shadowRoot);
+    }
+  });
 
   let pageScanTimer = null;
   const pageObserver = new MutationObserver((mutations) => {

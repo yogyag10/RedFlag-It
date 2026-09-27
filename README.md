@@ -5,10 +5,10 @@ A Manifest V3 Chrome extension and local FastAPI service for screening rental li
 
 - Adds a lightweight text-score bubble to visible rental search results. Opening a single Craigslist, Facebook Marketplace, or Furnished Finder listing runs its full check and shows a RedFlag bubble with that listing's score; select **See details** for evidence. The extension reads the listing page DOM and does not use marketplace cookies.
 - On a result card, only the visible title and short card text are sent to `/api/quick-scores`. Opening an individual listing sends its visible text, details, source URL, and up to eight public photo links to `/api/analyze`. Explicitly labeled room options can receive separate results; ambiguous room counts are not split into invented options.
-- Checks listing language for payment-before-viewing requests, hard-to-reverse payment methods, requests for verification codes, unavailable landlords, and pressure tactics.
+- Checks listing language for payment-before-viewing requests, hard-to-reverse payment methods, requests for verification codes, unavailable landlords, and pressure tactics. When a public profile rating and at least five reviews are visible, it also flags ratings of 2.5/5 or lower for manual review.
 - Optionally uses a local OpenCLIP model for image and text matching, photo reuse checks, and a likely-visible furniture estimate. Furniture matching is a semantic photo estimate, not object detection or proof that an item is included.
 - Optionally stores minimal listing features in PostgreSQL/PostGIS. With enough nearby history, scikit-learn DBSCAN checks for price-and-location density outliers.
-- Shows only a risk score and one of three classifications by default: **LOW RISK**, **BE CAREFUL**, or **SCAM POSSIBLE**. **See More** reveals signals, evidence, listing-provided facts, Furnish Finder, profile information visible on the page, and verification steps.
+- Shows the score and color-coded warning factors in a white, high-contrast design. A zero score starts with only **See details**; opening it reveals the six factor results.
 - Keeps up to five recent checks in Chrome storage on this device. History contains the listing title, results, and short evidence excerpts; it omits the structured address field, listing URL, photo links, and full description. The score is a triage aid, not a probability, market valuation, or proof of fraud.
 
 Risk bands are 0–29 (**LOW RISK**), 30–59 (**BE CAREFUL**), and 60–100 (**SCAM POSSIBLE**). The percentage is a rule-based screening score, not a calibrated chance of fraud.
@@ -38,11 +38,35 @@ The database has no listing history initially. Geographic price and cross-listin
 3. Open a rental search on Craigslist, Facebook Marketplace, or Furnished Finder. RedFlag adds quick-score bubbles to result cards. Open a result to see its full check bubble and select **See details** for evidence.
 4. Use the gear button to change the service URL or add the API key if you changed the local configuration.
 
+To refresh changes, click the reload icon for RedFlag at `chrome://extensions`, then reload the rental listing tab. Restart Uvicorn after backend changes. `http://127.0.0.1:8000/health` checks that the service is responding.
+
 The extension requests access only to Craigslist, Facebook Marketplace, Furnished Finder, and the local API by default. For a remote API, add its URL in Settings and approve Chrome’s host permission prompt. Use HTTPS and a service you control.
 
 ## API
 
-`POST /api/quick-scores` accepts up to 20 `{id, title, description, photo_available}` card summaries and returns lightweight text-warning scores without adding points for fields that search cards do not show. These quick scores do not save listings or download photos. The full `/api/analyze` check accepts `title`, `description`, `bedrooms`, `bathrooms`, `address`, `price`, `currency`, `price_period`, `location_text`, `latitude`, `longitude`, `image_urls`, and `source_url`, plus optional `rooms`, `profile_facts`, `listing_age`, and `availability_text`. Scores are points out of 100, not percentages or scam probabilities. Explicit room options receive separate rule-based scores. Photo furnishing estimates use local CLIP semantic comparisons when the model and public photos are available; otherwise the response explains that the photo check is unavailable. Image fetches are limited to Craigslist, Facebook, and Furnished Finder media hosts, validate each of up to three redirects, reject private IP addresses and non-image content, and cap image size at 8 MiB. Unavailable numeric or address values are `null`; text values default to empty strings and `image_urls` to an empty array. The first local model load may take longer than later checks.
+`POST /api/quick-scores` accepts up to 20 `{id, title, description, photo_available}` card summaries and returns lightweight text-warning scores without adding points for fields that search cards do not show. These quick scores do not save listings or download photos. The full `/api/analyze` check accepts `title`, `description`, `bedrooms`, `bathrooms`, `address`, `price`, `currency`, `price_period`, `location_text`, `latitude`, `longitude`, `image_urls`, and `source_url`, plus optional `rooms`, `profile_facts`, `listing_age`, and `availability_text`. Its JSON response includes `fake`, `votes` (`fake`/`real` counts), `review_check_available`, `consensus_rules`, and six `trees` strings alongside the existing score and evidence fields. It also reports `photo_urls_received` and `photos_processed` to distinguish links read by the extension from images fetched by the service. Each tree string contains one vote, a factor code, and that factor's result. Five factors check listing text; the sixth checks only a visible public profile rating summary when at least five reviews are shown. It does not read each written review or match reviews to the seller's rental listings. A rating of 2.5/5 or lower triggers a warning. These are transparent rule checks, not trained decision-tree models; a `real` vote means only that a warning rule did not match or the review evidence was unavailable. `fake` is true when more warning votes than non-warning votes are returned. Neither value verifies whether a listing is genuine. Scores are points out of 100, not percentages or scam probabilities. Explicit room options receive separate scores and rule votes. Photo furnishing estimates use local CLIP semantic comparisons when the model and public photos are available; otherwise the response explains that the photo check is unavailable. Image fetches are limited to Craigslist, Facebook, and Furnished Finder media hosts, validate each of up to three redirects, reject private IP addresses and non-image content, and cap image size at 8 MiB. Unavailable numeric or address values are `null`; text values default to empty strings and `image_urls` to an empty array. The first local model load may take longer than later checks.
+
+```json
+{
+  "fake": true,
+  "votes": { "fake": 4, "real": 2 },
+  "review_check_available": false,
+  "consensus_rules": [
+    "Payment requested before a viewing",
+    "Unusual or hard-to-reverse payment method",
+    "Request for an account verification code",
+    "Urgent pressure in the listing text"
+  ],
+  "trees": [
+    "fake | payment_before_viewing | Payment requested before a viewing",
+    "fake | wire_or_irreversible_payment | Unusual or hard-to-reverse payment method",
+    "real | landlord_unavailable | Landlord may not be available to show the unit rule not detected",
+    "fake | verification_code | Request for an account verification code",
+    "fake | pressure_tactic | Urgent pressure in the listing text",
+    "real | review_checker | No public review summary was visible; rating check unavailable"
+  ]
+}
+```
 
 `GET /health` reports service, database configuration, and vision initialization status. `RENTSHIELD_API_KEY` protects analysis requests with `Authorization: Bearer <key>`; local health remains open.
 

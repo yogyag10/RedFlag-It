@@ -8,6 +8,7 @@ from .schemas import ListingRequest, Signal
 class RiskResult:
     score: int
     signals: list[Signal]
+    review_summary: tuple[float, int] | None = None
 
 
 def _matched_evidence(pattern: re.Pattern[str], listing: ListingRequest) -> tuple[str | None, str | None]:
@@ -63,6 +64,35 @@ RULES: list[tuple[str, re.Pattern[str], str, str, int]] = [
 ]
 
 
+def parse_review_summary(profile_facts: list[str]) -> tuple[float, int] | None:
+    for fact in profile_facts:
+        count_match = re.search(
+            r"\(\s*(\d+)\s*(?:reviews?|ratings?)?\s*\)|\b(\d+)\s+(?:reviews?|ratings?)\b",
+            fact,
+            re.I,
+        )
+        if not count_match:
+            continue
+        count = int(count_match.group(1) or count_match.group(2))
+        rating_match = re.search(
+            r"(?<![\d.])([0-5](?:\.\d+)?)\s*(?:/\s*5|out\s+of\s+5|stars?\b|[\u2605\u2b50])",
+            fact,
+            re.I,
+        )
+        if not rating_match and re.search(r"\b(?:(?:seller|public)\s+)?(?:ratings?|reviews?)\b", fact, re.I):
+            rating_match = re.search(r"(?<![\d.])([0-5]\.\d+)(?![\d.])", fact)
+        if rating_match:
+            rating = float(rating_match.group(1))
+        else:
+            star_match = re.search(r"((?:[\u2605\u2606\u2b50]\ufe0f?){1,5})", fact)
+            if not star_match:
+                continue
+            rating = float(sum(star in ("\u2605", "\u2b50") for star in star_match.group(1)))
+        if 0 <= rating <= 5:
+            return rating, count
+    return None
+
+
 def analyze_text(
     listing: ListingRequest,
     *,
@@ -86,6 +116,21 @@ def analyze_text(
                 evidence_source=evidence_source,
             ))
 
+    review_summary = parse_review_summary(listing.profile_facts)
+    if review_summary is not None:
+        rating, review_count = review_summary
+        if review_count >= 5 and rating <= 2.5:
+            points += 12
+            signals.append(Signal(
+                code="low_public_review_rating",
+                title="Low public review rating",
+                detail=(
+                    f"The visible seller rating is {rating:.1f}/5 across {review_count} reviews. "
+                    "Read the reviews and verify the person independently; a rating alone cannot confirm a rental."
+                ),
+                severity="medium",
+            ))
+
     if include_completeness_signals and len(listing.description.strip()) < 35:
         points += 4
         signals.append(Signal(
@@ -104,7 +149,7 @@ def analyze_text(
             severity="low",
         ))
 
-    return RiskResult(score=min(100, points), signals=signals)
+    return RiskResult(score=min(100, points), signals=signals, review_summary=review_summary)
 
 
 def add_signal(result: RiskResult, signal: Signal, points: int) -> None:
@@ -112,6 +157,57 @@ def add_signal(result: RiskResult, signal: Signal, points: int) -> None:
         return
     result.signals.append(signal)
     result.score = min(100, result.score + points)
+
+
+def vote_summary(result: RiskResult) -> dict[str, object]:
+    """Return five warning-rule votes and one public-review check."""
+    matched_codes = {signal.code for signal in result.signals}
+    fake_votes = 0
+    real_votes = 0
+    unknown_votes = 0
+    consensus_rules: list[str] = []
+    trees: list[str] = []
+
+    for code, _pattern, title, _detail, _weight in RULES:
+        matched = code in matched_codes
+        vote = "fake" if matched else "real"
+        if matched:
+            fake_votes += 1
+            consensus_rules.append(title)
+            rule = title
+        else:
+            real_votes += 1
+            rule = f"{title} rule not detected"
+        trees.append(f"{vote} | {code} | {rule}")
+
+    review_match = "low_public_review_rating" in matched_codes
+    if review_match:
+        review_vote = "fake"
+        rating, review_count = result.review_summary or (0, 0)
+        review_rule = f"Low public rating {rating:.1f}/5 from {review_count} reviews"
+        consensus_rules.append(review_rule)
+        fake_votes += 1
+    elif result.review_summary is None or result.review_summary[1] < 5:
+        review_vote = "unknown"
+        unknown_votes += 1
+        if result.review_summary is None:
+            review_rule = "No public review summary was visible; review check unavailable"
+        else:
+            review_rule = f"Only {result.review_summary[1]} public reviews visible; too few to assess"
+    else:
+        review_vote = "real"
+        real_votes += 1
+        rating, review_count = result.review_summary
+        review_rule = f"No low-rating warning; public rating {rating:.1f}/5 from {review_count} reviews"
+    trees.append(f"{review_vote} | review_checker | {review_rule}")
+
+    return {
+        "fake": fake_votes > real_votes,
+        "votes": {"fake": fake_votes, "real": real_votes, "unknown": unknown_votes},
+        "review_check_available": result.review_summary is not None and result.review_summary[1] >= 5,
+        "consensus_rules": consensus_rules,
+        "trees": trees,
+    }
 
 
 def classify(score: int) -> str:

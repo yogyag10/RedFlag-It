@@ -4,17 +4,37 @@ let activeListing = null;
 let activeAnalysis = null;
 
 function show(active) {
+  document.body.dataset.zeroScore = "false";
   sections.forEach((name) => $(name).classList.toggle("hidden", name !== active));
 }
 
 function classify(score) {
-  if (score >= 60) return { key: "possible", label: "SCAM POSSIBLE" };
-  if (score >= 30) return { key: "careful", label: "BE CAREFUL" };
-  return { key: "low", label: "LOW RISK" };
+  if (score >= 60) return { key: "possible", label: "Scam Possible" };
+  if (score >= 30) return { key: "careful", label: "Be Careful" };
+  return { key: "low", label: "Low Risk" };
 }
 
 function scoreOf(result = {}) {
   return Math.max(0, Math.min(100, Math.round(Number(result.risk_score) || 0)));
+}
+
+function hasVoteContract(payload) {
+  const votes = payload?.votes;
+  return typeof payload?.fake === "boolean"
+    && Number.isInteger(votes?.fake)
+    && Number.isInteger(votes?.real)
+    && Number.isInteger(votes?.unknown)
+    && votes.fake >= 0
+    && votes.real >= 0
+    && votes.unknown >= 0
+    && votes.fake + votes.real + votes.unknown === 6
+    && typeof payload.review_check_available === "boolean"
+    && Array.isArray(payload.consensus_rules)
+    && payload.consensus_rules.every((rule) => typeof rule === "string")
+    && Array.isArray(payload.trees)
+    && payload.trees.length === 6
+    && payload.trees.every((tree) => typeof tree === "string" && /^(?:fake|real|unknown)\s*\|\s*[a-z0-9_]+\s*\|\s*\S/i.test(tree))
+    && payload.fake === (votes.fake > votes.real);
 }
 
 async function currentTab() {
@@ -71,12 +91,16 @@ async function analyze() {
     const { apiUrl = "http://127.0.0.1:8000", apiKey = "" } = await chrome.storage.local.get(["apiUrl", "apiKey"]);
     const response = await fetch(`${apiUrl.replace(/\/+$/, "")}/api/analyze`, {
       method: "POST",
+      credentials: "omit",
       headers: { "Content-Type": "application/json", ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) },
       body: JSON.stringify(activeListing),
       signal: AbortSignal.timeout(120000)
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.detail || `Analysis service returned ${response.status}.`);
+    if (!hasVoteContract(payload)) {
+      throw new Error("The backend response is missing the six safety factors. Update and restart the backend.");
+    }
     activeAnalysis = payload;
     render(payload, activeListing);
     await saveRecent(payload, activeListing);
@@ -101,160 +125,177 @@ function makeElement(tag, className, text) {
   return element;
 }
 
-function appendSection(parent, title) {
-  const section = makeElement("section", "detail-section");
-  section.append(makeElement("h3", "", title));
-  parent.append(section);
-  return section;
-}
+const VOTE_RULE_LABELS = {
+  payment_before_viewing: "Money before viewing",
+  wire_or_irreversible_payment: "Hard-to-reverse payment",
+  landlord_unavailable: "Landlord unavailable",
+  verification_code: "Account code request",
+  pressure_tactic: "Urgent pressure",
+  review_checker: "Public seller reviews",
+};
 
-function appendBulletList(parent, items) {
-  const list = makeElement("ul", "detail-list");
-  items.forEach((item) => list.append(makeElement("li", "", item)));
-  parent.append(list);
-}
+const ICON_SHAPES = {
+  warning: [["path", { d: "M12 3 2.7 20h18.6L12 3Z" }], ["path", { d: "M12 9v5" }], ["circle", { cx: "12", cy: "17", r: ".7", fill: "currentColor", stroke: "none" }]],
+  check: [["circle", { cx: "12", cy: "12", r: "9" }], ["path", { d: "m8 12 2.5 2.5L16.5 9" }]],
+  info: [["circle", { cx: "12", cy: "12", r: "9" }], ["path", { d: "M12 11v5M12 8h.01" }]],
+  payment: [["rect", { x: "3", y: "5", width: "18", height: "14", rx: "2" }], ["path", { d: "M3 10h18M7 15h4" }]],
+  transfer: [["path", { d: "M4 8h14l-3-3M20 16H6l3 3" }]],
+  landlord: [["circle", { cx: "12", cy: "8", r: "3" }], ["path", { d: "M5 20v-2a7 7 0 0 1 14 0v2" }]],
+  code: [["rect", { x: "5", y: "3", width: "14", height: "18", rx: "2" }], ["path", { d: "M9 7h6M9 11h.01M12 11h.01M15 11h.01M9 15h.01M12 15h.01M15 15h.01" }]],
+  pressure: [["circle", { cx: "12", cy: "12", r: "9" }], ["path", { d: "M12 7v5l3 2" }]],
+  reviews: [["path", { d: "m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.8 1-6.1L3.2 9.4l6.1-.9L12 3Z" }]],
+};
 
-function priceText(listing = {}) {
-  if (listing.price == null) return "Not shown";
-  const currency = /^[A-Z]{3}$/.test(listing.currency || "") ? listing.currency : "CAD";
-  try {
-    const amount = new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 2 }).format(listing.price);
-    return `${amount}${listing.price_period && listing.price_period !== "unknown" ? ` / ${listing.price_period}` : ""}`;
-  } catch (_) {
-    return `${listing.price} ${currency}`;
+const RULE_ICONS = {
+  payment_before_viewing: "payment",
+  wire_or_irreversible_payment: "transfer",
+  landlord_unavailable: "landlord",
+  verification_code: "code",
+  pressure_tactic: "pressure",
+  review_checker: "reviews",
+};
+
+function makeIcon(name, extraClass = "") {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("class", `rf-icon ${extraClass}`.trim());
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.8");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  for (const [tag, attributes] of ICON_SHAPES[name] || ICON_SHAPES.info) {
+    const shape = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    Object.entries(attributes).forEach(([key, value]) => shape.setAttribute(key, value));
+    svg.append(shape);
   }
+  return svg;
 }
 
-function buildDetails(analysis, listing = {}, room = null, roomSignals = null) {
-  const panel = makeElement("div", "room-details hidden");
-  const signals = roomSignals || room?.signals || analysis.signals || [];
-  const why = appendSection(panel, "Why RedFlag gave this score");
-  if (!signals.length) {
-    why.append(makeElement("p", "", "No specific warning signs were detected in the details RedFlag could read."));
-  } else {
-    const list = makeElement("ul", "detail-list");
-    signals.forEach((signal) => {
-      const item = makeElement("li");
-      item.append(makeElement("strong", "", signal.title || "Listing detail to review"));
-      if (signal.detail) item.append(makeElement("p", "", signal.detail));
-      if (signal.evidence) item.append(makeElement("span", "evidence-quote", `Listing text: “${signal.evidence}”`));
+function parseTreeVote(value) {
+  const [voteText = "", code = "", ...ruleParts] = String(value).split("|").map((part) => part.trim());
+  const normalizedVote = voteText.toLowerCase();
+  const vote = normalizedVote === "fake" || normalizedVote === "unknown" ? normalizedVote : "real";
+  return { vote, code, rule: ruleParts.join(" | ") };
+}
+
+function buildVoteDetails(analysis, result = null) {
+  const summary = result || analysis;
+  const panel = makeElement("div", "room-details hidden vote-details");
+  const votes = summary.votes || { fake: 0, real: 0 };
+  const storedUnknown = Number.isInteger(votes.unknown);
+  const unknownVotes = storedUnknown ? votes.unknown : summary.review_check_available === false ? 1 : 0;
+  const realVotes = Math.max(0, votes.real - (!storedUnknown ? unknownVotes : 0));
+  panel.dataset.verdict = summary.fake ? "fake" : "real";
+
+  const tally = makeElement("div", "vote-tally");
+  tally.setAttribute("role", "group");
+  tally.setAttribute("aria-label", `${votes.fake} warning votes, ${realVotes} clear checks, ${unknownVotes} unknown checks`);
+  const fakeCount = makeElement("span", "vote-count warning-count");
+  fakeCount.append(makeIcon("warning"), makeElement("strong", "", String(votes.fake)), makeElement("span", "", "warning"));
+  fakeCount.setAttribute("aria-label", `${votes.fake} warning votes`);
+  const realCount = makeElement("span", "vote-count clear-count");
+  realCount.append(makeIcon("check"), makeElement("strong", "", String(realVotes)), makeElement("span", "", "clear"));
+  realCount.setAttribute("aria-label", `${realVotes} checks without a warning match`);
+  const unknownCount = makeElement("span", "vote-count unknown-count");
+  unknownCount.append(makeIcon("info"), makeElement("strong", "", String(unknownVotes)), makeElement("span", "", "unknown"));
+  unknownCount.setAttribute("aria-label", `${unknownVotes} unknown checks`);
+  tally.append(fakeCount, realCount, unknownCount);
+
+  const ruleSection = makeElement("section", "detail-section vote-rule-section");
+  const ruleHeading = makeElement("h3", "detail-heading");
+  const rules = Array.isArray(summary.consensus_rules) ? summary.consensus_rules : [];
+  ruleHeading.append(makeIcon(rules.length ? "warning" : "check"), makeElement("span", "", "Warning signs"));
+  ruleSection.append(ruleHeading);
+  if (rules.length) {
+    const list = makeElement("ul", "vote-rule-list");
+    rules.forEach((rule) => {
+      const item = makeElement("li", "vote-rule-row");
+      item.append(makeIcon("warning", "warning-icon"), makeElement("span", "", rule));
+      item.setAttribute("aria-label", `Warning rule matched: ${rule}`);
       list.append(item);
     });
-    why.append(list);
-  }
-  if (analysis.room_results?.length > 1) {
-    const roomCodes = new Set(signals.map((signal) => signal.code));
-    const listingSignals = (analysis.signals || []).filter((signal) => !roomCodes.has(signal.code));
-    if (listingSignals.length) {
-      const shared = appendSection(panel, "Whole-listing checks · not part of this room’s score");
-      appendBulletList(shared, listingSignals.map((signal) => `${signal.title}: ${signal.detail}`));
-    }
-  }
-
-  const believable = appendSection(panel, "How to Make It Believable");
-  believable.append(makeElement("p", "verification-label", "UNVERIFIED · details shown on the listing"));
-  const facts = [];
-  if (listing.price != null) facts.push(["Price", priceText(listing)]);
-  if (listing.bedrooms != null) facts.push(["Bedrooms", String(listing.bedrooms)]);
-  if (listing.bathrooms != null) facts.push(["Bathrooms", String(listing.bathrooms)]);
-  if (listing.location_text) facts.push(["Location", listing.location_text]);
-  if (listing.address) facts.push(["Address", listing.address]);
-  if (listing.listing_age) facts.push(["Listing age", listing.listing_age]);
-  if (listing.availability_text) facts.push(["Availability", listing.availability_text]);
-  if (facts.length) {
-    facts.forEach(([label, value]) => {
-      const row = makeElement("div", "fact-row");
-      row.append(makeElement("span", "", label), makeElement("strong", "", value));
-      believable.append(row);
-    });
+    ruleSection.append(list);
   } else {
-    believable.append(makeElement("p", "", "No price, room, or location details were available to confirm."));
-  }
-  believable.append(makeElement("p", "", "These details come from the listing page. RedFlag has not confirmed that they are accurate."));
-
-  const checked = appendSection(panel, "What RedFlag verified");
-  checked.append(makeElement("p", "", "These are completed checks, not proof that the listing or its claims are genuine."));
-  const checks = ["Listing text was checked for common rental warning signs."];
-  if (analysis.photos_processed) checks.push(`${analysis.photos_processed} listing photo${analysis.photos_processed === 1 ? "" : "s"} processed.`);
-  if (analysis.price_comparison_available) checks.push(`Price and location compared with ${Number(analysis.baseline?.peer_count) || 0} nearby records in RedFlag’s local history.`);
-  appendBulletList(checked, checks);
-
-  const comparisons = appendSection(panel, "Price comparison");
-  if (analysis.price_comparison_available) {
-    const count = Number(analysis.baseline?.peer_count) || 0;
-    const roomNote = analysis.room_results?.length > 1 ? " Individual room prices were not compared separately." : "";
-    comparisons.append(makeElement("p", "", `Compared with ${count} recent nearby listings saved in RedFlag’s local history. This is a signal to investigate, not a market valuation.${roomNote}`));
-  } else {
-    comparisons.append(makeElement("p", "", analysis.baseline?.message || "A nearby price comparison was not available."));
+    const item = makeElement("p", "no-rules");
+    item.append(makeIcon("check", "clear-icon"), makeElement("span", "", "No warning rule matched"));
+    ruleSection.append(item);
   }
 
-  const history = appendSection(panel, "Profile and reviews");
-  if (Array.isArray(listing.profile_facts) && listing.profile_facts.length) {
-    appendBulletList(history, listing.profile_facts.map((fact) => `${fact} This is a platform display and was not independently verified.`));
-  } else {
-    history.append(makeElement("p", "", "Not enough public profile or review history was available to verify profile age, activity, or previous transactions."));
-  }
+  const breakdown = document.createElement("details");
+  breakdown.className = "vote-breakdown";
+  breakdown.open = true;
+  const breakdownHeading = makeElement("summary");
+  breakdownHeading.append(makeIcon("info"), makeElement("span", "", `${votes.fake + realVotes + unknownVotes} safety factors`));
+  breakdown.append(breakdownHeading);
+  const treeList = makeElement("ul", "vote-tree-list");
+  const signalByCode = new Map((summary.signals || []).map((signal) => [signal.code, signal]));
+  (Array.isArray(summary.trees) ? summary.trees : []).forEach((tree) => {
+    const parsed = parseTreeVote(tree);
+    const reviewUnavailable = parsed.code === "review_checker" && !summary.review_check_available;
+    const reviewLabel = "Public seller reviews";
+    const label = parsed.code === "review_checker"
+      ? reviewLabel
+      : VOTE_RULE_LABELS[parsed.code] || parsed.rule || "Rental warning check";
+    const signalCode = parsed.code === "review_checker" ? "low_public_review_rating" : parsed.code;
+    const signal = signalByCode.get(signalCode);
+    const item = makeElement("li", "vote-tree-row");
+    const unknownVote = reviewUnavailable || parsed.vote === "unknown";
+    item.dataset.vote = unknownVote ? "unknown" : parsed.vote;
+    item.append(
+      makeIcon(RULE_ICONS[parsed.code] || "info", "tree-kind-icon"),
+      makeIcon(unknownVote ? "info" : parsed.vote === "fake" ? "warning" : "check", `tree-vote-icon${unknownVote ? " unknown-icon" : ""}`),
+      makeElement("span", "tree-title", label)
+    );
+    const noteParts = [];
+    if (parsed.rule) noteParts.push(parsed.rule);
+    if (signal?.detail) noteParts.push(signal.detail);
+    if (signal?.evidence) noteParts.push(`Listing text: “${signal.evidence}”`);
+    if (parsed.code === "review_checker") noteParts.push(summary.review_check_available
+      ? "Visible seller rating checked; written review text and rental history are not checked."
+      : "Seller review data was not visible or had too few ratings to assess; written review text and rental history are not checked.");
+    if (noteParts.length) item.append(makeElement("small", "vote-tree-note", [...new Set(noteParts)].join(". ")));
+    item.setAttribute("aria-label", unknownVote
+      ? "Review information unavailable or too limited to assess."
+      : `${parsed.vote === "fake" ? "Warning found" : "No warning found"}: ${label}`);
+    treeList.append(item);
+  });
+  if (treeList.childElementCount) breakdown.append(treeList);
+  else breakdown.append(makeElement("p", "legacy-votes", "Rule-vote details unavailable"));
 
-  const furnishing = analysis.furnish_finder || {};
-  const finder = appendSection(panel, "Furnish Finder");
-  finder.append(makeElement("p", "", furnishing.summary || "A furnishing estimate was unavailable."));
-  if (furnishing.likely_visible_items?.length) {
-    appendBulletList(finder, furnishing.likely_visible_items.map((item) => `Likely visible: ${item}`));
-  }
-  if (furnishing.mentioned_items?.length) {
-    appendBulletList(finder, furnishing.mentioned_items.map((item) => `Description mentions: ${item}`));
-  }
-  if (furnishing.not_confirmed_items?.length) {
-    appendBulletList(finder, furnishing.not_confirmed_items.map((item) => `Not confirmed in these photos: ${item}`));
-  }
-  finder.append(makeElement("p", "", furnishing.note || "Photo estimates can miss items or mistake similar-looking objects."));
-  if (analysis.room_results?.length > 1) {
-    finder.append(makeElement("p", "", "Photos are from the whole listing and may not show which furniture belongs to this specific room."));
-  }
-
-  const unverified = appendSection(panel, "Still unverified");
-  appendBulletList(unverified, [
-    "Who owns the property or is authorized to rent it",
-    "The exact address and whether the unit is available",
-    "The identity and contact details of the person offering it",
-    "Whether displayed profile information or reviews are genuine"
-  ]);
-
-  const nextSteps = appendSection(panel, "What to verify");
-  appendBulletList(nextSteps, [
-    "Visit the unit or arrange a live video tour.",
-    "Verify the address and who is authorized to rent it.",
-    "Read the lease and understand the payment process before sending money."
-  ]);
-  nextSteps.append(makeElement("p", "", "The risk score is a screening score, not a probability or a finding of fraud."));
+  const note = makeElement("p", "vote-note", "Visible seller rating is checked. Written review text and rental history are not checked.");
+  note.setAttribute("role", "note");
+  panel.append(tally, ruleSection, breakdown, note);
   return panel;
 }
 
-function resultCard({ name, result, analysis, listing, roomInfo = null, isRecent = false }) {
+function resultCard({ name, result, analysis, isRecent = false }) {
   const score = scoreOf(result);
   const status = classify(score);
   const card = makeElement("article", `room-card${isRecent ? " recent-card" : ""}`);
   card.dataset.status = status.key;
+  card.dataset.zeroScore = String(score === 0);
   const heading = makeElement("h2", "room-heading", name || "Rental listing");
   const risk = makeElement("div", "risk-line");
-  risk.append(makeElement("strong", "risk-score", `${score} / 100`), makeElement("span", "risk-label", status.label));
-  const toggle = makeElement("button", "see-more", "See More");
+  risk.append(
+    makeIcon(status.key === "low" ? "check" : "warning", "risk-icon"),
+    makeElement("strong", "risk-score", `${score} / 100`),
+    makeElement("span", "risk-label", status.label)
+  );
+  const toggle = makeElement("button", "see-more");
   toggle.type = "button";
   toggle.setAttribute("aria-expanded", "false");
-  const detailListing = { ...listing };
-  if (roomInfo) {
-    for (const [key, value] of Object.entries(roomInfo)) {
-      if (value != null && value !== "") detailListing[key] = value;
-    }
-    for (const key of ["price", "bedrooms", "bathrooms"]) {
-      if (roomInfo[key] == null) detailListing[key] = null;
-    }
-  }
-  const details = buildDetails(analysis, detailListing, roomInfo, result.signals);
+  const toggleLabel = makeElement("span", "", "See details");
+  toggle.append(makeIcon("info"), toggleLabel);
+  toggle.setAttribute("aria-label", "See listing safety details");
+  const details = buildVoteDetails(analysis, result);
   toggle.addEventListener("click", () => {
     const expanded = !details.classList.contains("hidden");
     details.classList.toggle("hidden", expanded);
-    toggle.textContent = expanded ? "See More" : "See Less";
+    toggleLabel.textContent = expanded ? "See details" : "Hide details";
+    toggle.setAttribute("aria-label", expanded ? "See listing safety details" : "Hide listing safety details");
     toggle.setAttribute("aria-expanded", String(!expanded));
   });
   card.append(heading, risk, toggle, details);
@@ -284,8 +325,8 @@ function render(analysis, listing) {
   container.replaceChildren();
   const rooms = Array.isArray(analysis.room_results) ? analysis.room_results : [];
   const entries = rooms.length
-    ? rooms.map((room, index) => ({ name: room.name, result: room, roomInfo: listing.rooms?.[index] || null }))
-    : [{ name: listing.title || "Rental listing", result: analysis, roomInfo: null }];
+    ? rooms.map((room) => ({ name: room.name, result: room }))
+    : [{ name: listing.title || "Rental listing", result: analysis }];
   renderRoomOverview(entries);
   entries.forEach((entry, index) => {
     const card = resultCard({ ...entry, analysis, listing });
@@ -294,6 +335,7 @@ function render(analysis, listing) {
   });
   renderRecent();
   show("result");
+  document.body.dataset.zeroScore = String(entries.every((entry) => scoreOf(entry.result) === 0));
 }
 
 function safeSnapshot(listing = {}) {
@@ -428,6 +470,9 @@ $("feedback-dialog").addEventListener("click", (event) => {
 });
 document.querySelectorAll(".vote-button").forEach((button) => {
   button.addEventListener("click", () => saveFeedback(button.dataset.vote, button));
+});
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "local" && changes.recentChecks) renderRecent();
 });
 currentTab().then(async (tab) => {
   const reply = await pageReply(tab);

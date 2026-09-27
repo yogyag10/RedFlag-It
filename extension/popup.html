@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#111318">
+  <meta name="theme-color" content="#ffffff">
   <title>RedFlag</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
-      <div class="brand-mark" aria-hidden="true">R</div>
+      <img class="brand-mark" src="icons/redflag-logo.svg" alt="">
       <div class="brand-copy"><span class="eyebrow">RENTAL SAFETY</span><h1>RedFlag</h1></div>
       <button id="settings" class="icon-button" type="button" title="Settings" aria-label="Open settings">⚙</button>
     </header>
@@ -31,7 +31,7 @@
     <section id="error" class="error hidden" aria-live="polite">
       <h2>Couldn’t check this page</h2>
       <p id="error-copy"></p>
-      <button id="retry" class="secondary-button" type="button">Try again</button>
+      <button id="retry" class="secondary-button recheck-button" type="button">↻ Re-check Listing</button>
     </section>
 
     <section id="result" class="result hidden" aria-live="polite">
@@ -41,7 +41,7 @@
       </section>
       <div id="room-results" class="room-results"></div>
       <p class="result-note">A screening aid, not proof of fraud. Verify the unit and who can rent it.</p>
-      <button id="again" class="secondary-button again-button" type="button">Check another listing</button>
+      <button id="again" class="secondary-button again-button recheck-button" type="button">↻ Re-check Listing</button>
       <button id="feedback-open" class="feedback-trigger" type="button">Give feedback</button>
     </section>
 

@@ -74,7 +74,21 @@ class Baseline(BaseModel):
     message: str
 
 
-class RoomAnalysis(BaseModel):
+class VoteCounts(BaseModel):
+    fake: int = Field(ge=0, le=6)
+    real: int = Field(ge=0, le=6)
+    unknown: int = Field(default=0, ge=0, le=6)
+
+
+class VoteSummary(BaseModel):
+    fake: bool
+    votes: VoteCounts
+    review_check_available: bool
+    consensus_rules: list[str] = Field(default_factory=list)
+    trees: list[str] = Field(min_length=6, max_length=6)
+
+
+class RoomAnalysis(VoteSummary):
     name: str
     risk_score: int = Field(ge=0, le=100)
     risk_level: Literal["LOW RISK", "BE CAREFUL", "SCAM POSSIBLE"]
@@ -90,13 +104,14 @@ class FurnishFinderResult(BaseModel):
     note: str
 
 
-class ListingAnalysis(BaseModel):
+class ListingAnalysis(VoteSummary):
     risk_score: int = Field(ge=0, le=100)
     risk_level: Literal["LOW RISK", "BE CAREFUL", "SCAM POSSIBLE"]
     summary: str
     signals: list[Signal]
     baseline: Baseline
     vision_status: str
+    photo_urls_received: int = 0
     photos_processed: int = 0
     photo_text_match_available: bool = False
     price_comparison_available: bool = False

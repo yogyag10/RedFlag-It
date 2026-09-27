@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RedFlag",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Review rental listings for common warning signs before you contact a landlord.",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting", "storage"],
