@@ -7,7 +7,7 @@ import ipaddress
 import os
 import socket
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 import numpy as np
@@ -28,6 +28,12 @@ def _public_image_url(raw_url: str) -> bool:
     parsed = urlsplit(raw_url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
         return False
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
+    if port is not None and port != (443 if parsed.scheme == "https" else 80):
+        return False
     host = parsed.hostname.rstrip(".").lower()
     if host in {"localhost", "localhost.localdomain"} or host.endswith((".localhost", ".local", ".internal")):
         return False
@@ -46,19 +52,42 @@ async def _download_image(url: str) -> bytes | None:
         return None
     timeout = httpx.Timeout(8.0, connect=4.0)
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, headers={"User-Agent": "VancouverRentalScamShield/0.1"}) as client:
-            async with client.stream("GET", url) as response:
-                if response.status_code != 200 or not response.headers.get("content-type", "").lower().startswith("image/"):
+        headers = {
+            "User-Agent": "VancouverRentalScamShield/0.1",
+            "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        }
+        initial_host = (urlsplit(url).hostname or "").lower()
+        if initial_host.endswith(("facebook.com", "fbcdn.net", "fbsbx.com")):
+            headers["Referer"] = "https://www.facebook.com/marketplace/"
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, headers=headers) as client:
+            current_url = url
+            for redirect_count in range(4):
+                # Facebook's CDN often redirects signed photo URLs. Validate every
+                # target before requesting it to keep the public-host restriction.
+                if not _public_image_url(current_url):
                     return None
-                length = response.headers.get("content-length")
-                if length and int(length) > MAX_IMAGE_BYTES:
-                    return None
-                data = bytearray()
-                async for chunk in response.aiter_bytes():
-                    data.extend(chunk)
-                    if len(data) > MAX_IMAGE_BYTES:
+                async with client.stream("GET", current_url) as response:
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        location = response.headers.get("location")
+                        if not location or redirect_count == 3:
+                            return None
+                        next_url = urljoin(current_url, location)
+                        if urlsplit(current_url).scheme == "https" and urlsplit(next_url).scheme != "https":
+                            return None
+                        current_url = next_url
+                        continue
+                    if response.status_code != 200 or not response.headers.get("content-type", "").lower().startswith("image/"):
                         return None
-                return bytes(data)
+                    length = response.headers.get("content-length")
+                    if length and int(length) > MAX_IMAGE_BYTES:
+                        return None
+                    data = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        data.extend(chunk)
+                        if len(data) > MAX_IMAGE_BYTES:
+                            return None
+                    return bytes(data)
+            return None
     except (httpx.HTTPError, ValueError, OSError):
         return None
 

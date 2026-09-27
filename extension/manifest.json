@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Vancouver Rental Scam Shield",
-  "version": "0.1.0",
-  "description": "Review Vancouver rental listings for common fraud signals before you contact a landlord.",
+  "name": "RedFlag",
+  "version": "0.2.0",
+  "description": "Review rental listings for common warning signs before you contact a landlord.",
   "minimum_chrome_version": "116",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
@@ -13,7 +13,7 @@
   ],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "action": {
-    "default_title": "Check this rental listing",
+    "default_title": "RedFlag rental check",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/shield-16.png",

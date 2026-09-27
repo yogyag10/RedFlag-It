@@ -3,80 +3,119 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Rental Shield</title>
+  <meta name="theme-color" content="#111318">
+  <title>RedFlag</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
       <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 32 32" focusable="false"><path d="M16 3.5 27 8v7.2c0 7.2-4.6 11.4-11 13.3C9.6 26.6 5 22.4 5 15.2V8l11-4.5Z"/><path d="m11.5 16 3 3 6.5-7"/></svg>
+        <svg viewBox="0 0 24 24" focusable="false"><path d="M12 2.8 20 6v5.2c0 5.2-3.2 8.2-8 10-4.8-1.8-8-4.8-8-10V6l8-3.2Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
       </div>
-      <div class="brand-copy">
-        <p class="eyebrow">VANCOUVER RENTAL CHECK</p>
-        <h1>Rental Shield</h1>
-      </div>
+      <div class="brand-copy"><span class="eyebrow">VANCOUVER · RENTAL CHECK</span><h1>RedFlag</h1></div>
       <button id="settings" class="icon-button" type="button" title="Settings" aria-label="Open settings">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/><path d="m19.4 13.5 1.1.8-1.1 1.9-1.3-.5a7.8 7.8 0 0 1-1.4.8l-.2 1.4h-2.2l-.3-1.4a7.8 7.8 0 0 1-1.5-.1l-.9 1.1-1.9-1.1.5-1.3a7.8 7.8 0 0 1-.8-1.4l-1.4-.2v-2.2l1.4-.3a7.8 7.8 0 0 1 .1-1.5l-1.1-.9 1.1-1.9 1.3.5a7.8 7.8 0 0 1 1.4-.8l.2-1.4h2.2l.3 1.4a7.8 7.8 0 0 1 1.5.1l.9-1.1 1.9 1.1-.5 1.3a7.8 7.8 0 0 1 .8 1.4l1.4.2v2.2l-1.4.3a7.8 7.8 0 0 1-.1 1.5Z"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="m19.2 13.7 1 .8-1.2 2-1.2-.5a7.8 7.8 0 0 1-1.4.8l-.2 1.3h-2.4l-.2-1.3a7.7 7.7 0 0 1-1.6-.1l-.8 1-2-1.2.5-1.2a7.8 7.8 0 0 1-.8-1.4l-1.3-.2v-2.4l1.3-.2a7.7 7.7 0 0 1 .1-1.6l-1-.8 1.2-2 1.2.5a7.8 7.8 0 0 1 1.4-.8l.2-1.3h2.4l.2 1.3a7.7 7.7 0 0 1 1.6.1l.8-1 2 1.2-.5 1.2a7.8 7.8 0 0 1 .8 1.4l1.3.2v2.4l-1.3.2a7.7 7.7 0 0 1-.1 1.6Z"/></svg>
       </button>
     </header>
 
     <section id="intro" class="intro">
-      <span class="platform-label"><span class="platform-dot" aria-hidden="true"></span> Craigslist and Facebook Marketplace</span>
-      <h2>Pause before you message.</h2>
-      <p>Check a rental listing for common warning signs. You stay in control of what happens next.</p>
-      <button id="analyze" class="primary" type="button">
-        <span>Check this listing</span>
-        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11M10 5l5 5-5 5"/></svg>
-      </button>
-      <p id="page-hint" class="hint" role="status"></p>
-      <p class="privacy-note"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4.5" y="8.5" width="11" height="8" rx="2"/><path d="M7 8V6a3 3 0 0 1 6 0v2"/></svg> Nothing is checked until you press the button.</p>
+      <div class="intro-copy"><span class="live-dot" aria-hidden="true"></span><span id="page-hint" role="status">Ready when you are</span></div>
+      <h2>Check this listing.</h2>
+      <p>Quick signals before you reach out.</p>
+      <button id="analyze" class="primary" type="button"><span>Run check</span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11M10 5l5 5-5 5"/></svg></button>
+      <div class="privacy-line"><svg viewBox="0 0 18 18" aria-hidden="true"><rect x="3.5" y="7.5" width="11" height="8" rx="2"/><path d="M6 7V5.5a3 3 0 0 1 6 0V7"/></svg><span>Only checks when you click.</span></div>
     </section>
 
     <section id="loading" class="loading hidden" aria-live="polite" aria-busy="true">
-      <span class="spinner" aria-hidden="true"></span>
-      <div><strong>Checking the listing</strong><span>Looking for details that may need a closer look.</span></div>
+      <div class="scan-orbit" aria-hidden="true"><span></span><i></i></div>
+      <div class="loading-copy"><strong>Scanning listing</strong><span>Checking details and available photos</span></div>
+      <div class="scan-track" aria-hidden="true"><span></span></div>
     </section>
 
     <section id="error" class="error hidden" aria-live="polite">
-      <div class="state-icon" aria-hidden="true">!</div>
-      <div><h2>We couldn’t check this page</h2><p id="error-copy"></p></div>
-      <button id="retry" class="secondary" type="button">Try again</button>
+      <span class="error-mark" aria-hidden="true">!</span>
+      <div class="error-copy"><h2>Couldn’t check this page</h2><p id="error-copy"></p></div>
+      <button id="retry" class="text-button" type="button">Try again <span aria-hidden="true">↗</span></button>
     </section>
 
     <section id="result" class="result hidden" aria-live="polite">
-      <div id="score-card" class="verdict" data-level="low">
-        <div class="verdict-top">
-          <div class="verdict-icon" id="verdict-icon" aria-hidden="true">✓</div>
-          <div class="verdict-copy">
-            <p class="eyebrow">SCREENING RESULT</p>
-            <h2 id="level">Lower signal</h2>
-            <p id="summary" class="summary"></p>
-          </div>
+      <article id="score-card" class="score-card" data-level="low">
+        <div class="score-ring" id="score-ring" role="img" aria-label="Signal score">
+          <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-track" cx="60" cy="60" r="51"/><circle id="score-arc" class="ring-value" cx="60" cy="60" r="51"/></svg>
+          <div class="ring-center"><strong id="score">—</strong><span>signal</span></div>
         </div>
-        <div class="score-row"><span>Signal score</span><strong><span id="score">—</span><small> / 100</small></strong></div>
-        <div id="score-track" class="score-track" role="meter" aria-label="Signal score" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="score-fill"></span></div>
-        <p class="score-note">This score is not the chance that a listing is a scam.</p>
+        <div class="score-copy"><span class="eyebrow">SCREENING RESULT</span><h2 id="level">Lower signal</h2><p id="summary"></p></div>
+        <span class="score-unit">/ 100</span>
+        <p class="not-probability">A review score, not a scam probability.</p>
+      </article>
+
+      <div class="check-strip" aria-label="Analysis coverage">
+        <div class="check-chip" id="text-check"><span class="chip-dot"></span><span>Text</span><b>Ready</b></div>
+        <div class="check-chip" id="photo-check"><span class="chip-dot"></span><span>Photos</span><b>—</b></div>
+        <div class="check-chip" id="price-check"><span class="chip-dot"></span><span>Local data</span><b>—</b></div>
       </div>
 
-      <div class="section-heading">
-        <div><h3>Reasons to review</h3><p>Here’s what the check noticed.</p></div>
-        <span id="signal-count" class="count-pill"></span>
+      <section class="signals-section">
+        <div class="section-heading"><h3>Signals</h3><span id="signal-count" class="count-pill">0</span></div>
+        <ul id="signals" class="signals"></ul>
+        <button id="more-signals" class="more-signals hidden" type="button">View all signals</button>
+      </section>
+
+      <dialog id="signals-dialog" class="signals-dialog" aria-labelledby="signals-dialog-title">
+        <div class="feedback-dialog-heading">
+          <div><span class="eyebrow">LISTING REVIEW</span><h3 id="signals-dialog-title">All signals</h3></div>
+          <button id="signals-close" class="dialog-close" type="button" aria-label="Close signals">×</button>
+        </div>
+        <ul id="all-signals" class="signals all-signals"></ul>
+      </dialog>
+      <dialog id="signal-detail-dialog" class="signal-detail-dialog" aria-labelledby="signal-detail-title">
+        <div class="feedback-dialog-heading">
+          <div><span class="eyebrow">WHY THIS MATTERS</span><h3 id="signal-detail-title"></h3></div>
+          <button id="signal-detail-close" class="dialog-close" type="button" aria-label="Close signal details">×</button>
+        </div>
+        <p id="signal-detail-copy" class="signal-detail-copy"></p>
+        <div id="signal-detail-evidence" class="evidence hidden"><span id="signal-evidence-source"></span><q id="signal-evidence-quote"></q></div>
+      </dialog>
+
+      <button id="coverage-open" class="coverage-trigger" type="button" aria-haspopup="dialog" aria-controls="coverage-dialog">
+        <span>How it was checked</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 6 5 5 5-5"/></svg>
+      </button>
+      <dialog id="coverage-dialog" class="coverage-dialog" aria-labelledby="coverage-title">
+        <div class="feedback-dialog-heading">
+          <div><span class="eyebrow">ANALYSIS COVERAGE</span><h3 id="coverage-title">How it was checked</h3></div>
+          <button id="coverage-close" class="dialog-close" type="button" aria-label="Close coverage details">×</button>
+        </div>
+        <div class="coverage-body">
+          <p id="coverage-text"></p>
+          <p id="coverage-photos"></p>
+          <p id="coverage-price"></p>
+        </div>
+      </dialog>
+
+      <div class="feedback-row">
+        <button id="feedback-open" class="feedback-trigger" type="button" aria-haspopup="dialog" aria-controls="feedback-dialog">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4.5h14v9H9l-4 3v-3H3z"/><path d="M6.5 8h7M6.5 10.5h4"/></svg>
+          <span>Give feedback</span>
+        </button>
       </div>
-      <ul id="signals" class="signals"></ul>
-      <div id="baseline-card" class="baseline-card">
-        <span class="baseline-icon" aria-hidden="true">i</span>
-        <p id="baseline"></p>
-      </div>
-      <div class="next-steps">
-        <h3>Before you pay</h3>
-        <p>See the unit, confirm who can rent it, and use a payment method you understand.</p>
-      </div>
-      <p class="disclaimer">A warning is a reason to check. It isn’t proof of fraud, and a low score doesn’t prove a listing is safe.</p>
-      <button id="again" class="secondary" type="button">Check again</button>
+      <dialog id="feedback-dialog" class="feedback-dialog" aria-labelledby="feedback-title">
+        <div class="feedback-dialog-heading">
+          <div><span class="eyebrow">YOUR FEEDBACK</span><h3 id="feedback-title">Was this result correct?</h3></div>
+          <button id="feedback-close" class="dialog-close" type="button" aria-label="Close feedback">×</button>
+        </div>
+        <p class="feedback-prompt">Your answer stays on this device.</p>
+        <div class="feedback-actions">
+          <button class="vote-button" type="button" data-vote="correct" aria-pressed="false">Yes</button>
+          <button class="vote-button" type="button" data-vote="incorrect" aria-pressed="false">No</button>
+        </div>
+        <p id="feedback-status" role="status" aria-live="polite"></p>
+      </dialog>
+
+      <div class="result-footer"><span>Verify the unit and renter yourself.</span><button id="again" class="icon-button refresh-button" type="button" title="Check again" aria-label="Check this listing again"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 7a6 6 0 1 0 1 4"/><path d="M16 3v4h-4"/></svg></button></div>
     </section>
 
-    <footer>Listing text and public photo links go to your configured analysis service only when you check.</footer>
+    <footer class="footer"><span class="footer-mark" aria-hidden="true">◈</span> RedFlag <span class="footer-divider">/</span> Screening aid</footer>
   </main>
   <script src="popup.js"></script>
 </body>

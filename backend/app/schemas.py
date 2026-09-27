@@ -44,4 +44,7 @@ class ListingAnalysis(BaseModel):
     signals: list[Signal]
     baseline: Baseline
     vision_status: str
+    photos_processed: int = 0
+    photo_text_match_available: bool = False
+    price_comparison_available: bool = False
     analyzed_at: datetime

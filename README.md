@@ -1,14 +1,13 @@
-# Vancouver Rental Scam Shield
+# RedFlag
 
 A Manifest V3 Chrome extension and local FastAPI service for screening rental listings on Craigslist and Facebook Marketplace. It reports explainable warning signs; it does not decide whether a listing is fraudulent.
-Im just checking that i can push
 ## What it does
 
-- Reads the visible listing title, description, price, location coordinates when exposed by the page, and up to eight public image URLs after you click **Analyze this listing**.
+- Reads the visible listing title, description, price, location coordinates when exposed by the page, and up to eight public image URLs after you click **Run check**.
 - Checks listing language for payment-before-viewing requests, hard-to-reverse payment methods, requests for verification codes, unavailable landlords, and pressure tactics.
 - Optionally uses a local OpenCLIP model for image and text embeddings. It can flag a weak text/photo match and compare a photo with recent photos previously analyzed by the same service.
 - Optionally stores minimal listing features in PostgreSQL/PostGIS. With enough nearby history, scikit-learn DBSCAN checks for price-and-location density outliers.
-- Shows the score and plain-language signal cards in the extension popup. Text-based flags include the short phrase that triggered the rule and where it appeared; each card explains why it matters. The score is a triage aid, not a probability, market valuation, or proof of fraud.
+- Shows a compact animated score ring, text/photo/local-history coverage, and expandable signal cards. Text-based flags include the short phrase that triggered the rule and where it appeared. The score is a triage aid, not a probability, market valuation, or proof of fraud.
 
 The project uses OpenCLIP with LAION pretrained weights. It does not send listing content to OpenAI or another model API. CLIP weights are downloaded by the vision-enabled service on its first model use.
 
@@ -32,7 +31,7 @@ The database has no listing history initially. Geographic price and cross-listin
 
 1. Visit `chrome://extensions` and enable **Developer mode**.
 2. Choose **Load unpacked** and select this repository’s `extension` folder.
-3. Open a rental listing on Craigslist or Facebook Marketplace, click the extension icon, then click **Analyze this listing**.
+3. Open a rental listing on Craigslist or Facebook Marketplace, click the extension icon, then click **Run check**.
 4. Use the gear button to change the service URL or add the API key if you changed the local configuration.
 
 The extension requests access only to Craigslist, Facebook Marketplace, and the local API by default. For a remote API, add its URL in Settings and approve Chrome’s host permission prompt. Use HTTPS and a service you control.

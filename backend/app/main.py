@@ -71,6 +71,7 @@ async def analyze_listing(listing: ListingRequest):
         peer_count=0,
         message="No PostGIS history is configured. Price and image reuse comparisons use only history stored by this service.",
     )
+    price_comparison_available = False
     if store.enabled:
         exact_duplicate = False
         duplicate_similarity = None
@@ -121,14 +122,18 @@ async def analyze_listing(listing: ListingRequest):
             and listing.latitude is not None
             and listing.longitude is not None
             and len(peers) >= 10
-            and await asyncio.to_thread(is_density_outlier, peers, listing.price, listing.latitude, listing.longitude)
         ):
-            add_signal(result, Signal(
-                code="local_price_density_outlier",
-                title="Price and location differ from nearby listing patterns",
-                detail="A DBSCAN density check marked this price-and-location combination as unusual among recent listings analyzed by this service. The comparison is a screening signal, not a market valuation.",
-                severity="medium",
-            ), 20)
+            price_is_outlier = await asyncio.to_thread(
+                is_density_outlier, peers, listing.price, listing.latitude, listing.longitude
+            )
+            price_comparison_available = True
+            if price_is_outlier:
+                add_signal(result, Signal(
+                    code="local_price_density_outlier",
+                    title="Price and location differ from nearby listing patterns",
+                    detail="A DBSCAN density check marked this price-and-location combination as unusual among recent listings analyzed by this service. The comparison is a screening signal, not a market valuation.",
+                    severity="medium",
+                ), 20)
     elif vision.images:
         baseline = Baseline(
             available=False,
@@ -152,5 +157,8 @@ async def analyze_listing(listing: ListingRequest):
         signals=result.signals,
         baseline=baseline,
         vision_status=vision.status,
+        photos_processed=len(vision.images),
+        photo_text_match_available=vision.text_image_similarity is not None,
+        price_comparison_available=price_comparison_available,
         analyzed_at=datetime.now(timezone.utc),
     )
