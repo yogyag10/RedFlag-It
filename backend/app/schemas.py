@@ -7,6 +7,9 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator
 class ListingRequest(BaseModel):
     title: str = Field(default="", max_length=300)
     description: str = Field(default="", max_length=12_000)
+    bedrooms: float | None = Field(default=None, ge=0, le=100)
+    bathrooms: float | None = Field(default=None, ge=0, le=100)
+    address: str | None = Field(default=None, max_length=500)
     price: float | None = Field(default=None, gt=0, le=1_000_000)
     currency: str = Field(default="CAD", min_length=3, max_length=3)
     price_period: Literal["month", "week", "day", "night", "unknown"] = "month"

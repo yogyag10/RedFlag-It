@@ -38,7 +38,7 @@ The extension requests access only to Craigslist, Facebook Marketplace, and the 
 
 ## API
 
-`POST /api/analyze` accepts JSON with `title`, `description`, `price`, `currency`, `price_period`, `location_text`, optional `latitude`/`longitude`, `image_urls`, and `source_url`. Image fetches are limited to Craigslist and Facebook media hosts and reject private IP addresses, redirects, non-image content, and images larger than 8 MiB. The popup allows two minutes for a first model load; retry after the initial weights download has completed if needed.
+`POST /api/analyze` accepts JSON with `title`, `description`, optional numeric `bedrooms` and `bathrooms`, optional `address`, `price`, `currency`, `price_period`, `location_text`, optional `latitude`/`longitude`, `image_urls`, and `source_url`. Unavailable numeric or address values are `null`; text values default to empty strings and `image_urls` to an empty array. Image fetches are limited to Craigslist and Facebook media hosts, validate each of up to three redirects, reject private IP addresses and non-image content, and cap image size at 8 MiB. The popup allows two minutes for a first model load; retry after the initial weights download has completed if needed.
 
 `GET /health` reports service, database configuration, and vision initialization status. `RENTSHIELD_API_KEY` protects analysis requests with `Authorization: Bearer <key>`; local health remains open.
 
